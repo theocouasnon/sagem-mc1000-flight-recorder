@@ -1,0 +1,125 @@
+==============================================================================
+APRILIA CAPONORD ETV 1000 (ROTEX V990) - SAGEM MC1000 FLIGHT RECORDER
+FORENSIC INCIDENT INVESTIGATION DOSSIER
+==============================================================================
+Incident ID        : capture_20260913_201507_835_trigger_d_steady_tps_rpm_drop
+Timestamp (Local)  : 2026-09-13 20:15:07.835
+Trigger Reason     : TRIGGER_D_STEADY_TPS_RPM_DROP
+ECU Architecture   : SAGEM MC1000 (KWP2000 / ISO 14230 @ 10,400 baud)
+Half-Duplex Line   : K-Line (TX Echo-Stripping Verified)
+------------------------------------------------------------------------------
+1. AUTOMATED ROOT CAUSE DIAGNOSIS
+------------------------------------------------------------------------------
+Trigger: Constant TPS Cruising Stutter / Misfire (RPM: 3250, TPS: 16.5%, Volts: 14.10V, ECT: 79.0°C). Accompanied by active fault: Code 33 (Ignition Coil 1 (Front Cylinder Side)). Analysis: Sudden RPM drop while throttle held constant above idle. Classic Caponord cruising hesitation under load. Elevated combustion pressure during steady cruise creates high secondary voltage demand, causing failing pencil coil(s) (Coils 33-36) to arc through the body to the cylinder head, or triggering VR pick-up timing jitter. Note: Does not occur at idle due to low cylinder pressure.
+
+------------------------------------------------------------------------------
+2. TRIGGER INSTANTANEOUS SNAPSHOT (T = 0.000s)
+------------------------------------------------------------------------------
+  Engine Speed      : 3250.0 RPM  (dRPM/dt: -7844.9 RPM/s)
+  Throttle Position : 16.47 %  (dTPS/dt: +0.00 %/s)
+  Battery Voltage   : 14.10 V  (dVolts/dt: +0.000 V/s)
+  Coolant Temp (ECT): 79.0 °C
+  Intake Air (IAT)  : 24.0 °C
+  Crank Sync Status : OK (Synchronized)
+  Coil 1 Fault (FS) : Normal
+  Coil 2 Fault (FC) : Normal
+  Coil 3 Fault (RS) : Normal
+  Coil 4 Fault (RC) : Normal
+  Tip-Over / Fall   : Normal
+  Active DTC Codes  : 33
+  Raw KWP Hex Packet: 8af111610132c82a774037140014
+
+------------------------------------------------------------------------------
+3. FORENSIC DYNAMICS & STUMBLE METRICS
+------------------------------------------------------------------------------
+  Pre-Event Baseline RPM : 3801.3 RPM
+  Throttle Stability ΔTPS : 0.39 % (steady throttle confirmed)
+  Stumble RPM Trough     : 3250.0 RPM
+  Total RPM Hesitation   : -551.3 RPM
+  Max Deceleration Rate  : 7844.9 RPM/sec
+  Minimum Battery Volts  : 14.10 V
+  Stumble Duration       : 533 ms
+
+------------------------------------------------------------------------------
+4. PHYSICAL & ELECTRICAL MECHANISM ANALYSIS
+------------------------------------------------------------------------------
+  Why does this occur during steady cruising and NEVER at idle?
+  * IDLE DYNAMICS (RPM < 1500, TPS < 2%): High intake manifold depression
+    (vacuum) reduces cylinder air charge. Peak compression pressure at the
+    moment of spark is low (~4-6 bar). Spark plug ionization breakdown voltage
+    is low (~8-12 kV). Weak coil insulation easily contains this voltage.
+
+  * CRUISE DYNAMICS (RPM 2500-4500, TPS 10-25%): Engine operates under steady
+    load. Throttle butterfly admits substantial air mass. Cylinder pressure
+    at ignition advance reaches ~12-18 bar. Paschen's Law dictates that spark
+    gap breakdown voltage surges to 20-28 kV.
+
+  * SAGEM MC1000 TRANSIENT FLASH QUIRK: Aging JCI pencil coils (Coils 33-36)
+    develop dielectric micro-fractures in the secondary winding insulation.
+    When 25+ kV is demanded under cruising load, the secondary voltage arcs
+    internally or punches through the silicone boot to the aluminum spark well.
+    The Sagem ECU senses primary current collapse anomaly, triggering a momentary
+    EFI warning flash and engine stumble. Because the coil recovers once engine
+    load drops or throttle modulates, the ECU clears the fault before latching
+    it into permanent NVRAM storage (unlatched transient).
+
+------------------------------------------------------------------------------
+5. ACTIONABLE REPAIR RECOMMENDATIONS
+------------------------------------------------------------------------------
+  1. COILS: Replace failing pencil coil(s) with Peugeot/Renault equivalents
+     (e.g., Valeo 245040 / Bougicord 157800 / Beru ZS354 / Sagem 2526180A).
+     Check Front Side (Coil 1) and Rear Side (Coil 3) as they run hottest.
+  2. CRANK SENSOR (VR PICK-UP): Inspect gap between sensor tip and flywheel teeth
+     (spec: 0.60 mm - 0.70 mm). Clean metallic debris from magnetic pole face.
+  3. ELECTRICAL BROWNOUT: Check Caponord brown 3-pin alternator connector under
+     tank and white round connector near battery for melting/charring.
+
+------------------------------------------------------------------------------
+6. CHRONOLOGICAL TELEMETRY TIMELINE (-1.0s to +1.0s)
+------------------------------------------------------------------------------
+  Offset |    RPM |  dRPM/dt |  TPS % |  Volts | Sync | Coils (1234) | Marker              
+------------------------------------------------------------------------------
+ -1.485s |   3823 |      -21 |   16.1 |  14.10 |   OK |     ....     |                     
+ -1.412s |   3820 |      -48 |   16.1 |  14.10 |   OK |     ....     |                     
+ -1.337s |   3814 |      -70 |   16.1 |  14.10 |   OK |     ....     |                     
+ -1.264s |   3808 |      -89 |   16.1 |  14.10 |   OK |     ....     |                     
+ -1.188s |   3800 |      -99 |   16.1 |  14.10 |   OK |     ....     |                     
+ -1.115s |   3793 |      -99 |   16.1 |  14.10 |   OK |     ....     |                     
+ -1.040s |   3786 |      -90 |   16.1 |  14.10 |   OK |     ....     |                     
+ -0.966s |   3781 |      -75 |   16.1 |  14.10 |   OK |     ....     |                     
+ -0.893s |   3777 |      -55 |   16.1 |  14.10 |   OK |     ....     |                     
+ -0.818s |   3775 |      -27 |   16.1 |  14.10 |   OK |     ....     |                     
+ -0.746s |   3775 |       +3 |   16.1 |  14.10 |   OK |     ....     |                     
+ -0.673s |   3778 |      +31 |   16.1 |  14.10 |   OK |     ....     |                     
+ -0.600s |   3782 |      +55 |   16.1 |  14.10 |   OK |     ....     |                     
+ -0.527s |   3787 |      +78 |   16.1 |  14.10 |   OK |     ....     |                     
+ -0.453s |   3794 |      +95 |   16.5 |  14.10 |   OK |     ....     |                     
+ -0.379s |   3802 |      +99 |   16.5 |  14.10 |   OK |     ....     |                     
+ -0.304s |   3809 |      +96 |   16.5 |  14.10 |   OK |     ....     |                     
+ -0.220s |   3816 |      +86 |   16.5 |  14.10 |   OK |     ....     |                     
+ -0.146s |   3821 |      +68 |   16.5 |  14.10 |   OK |     ....     |                     
+ -0.073s |   3824 |      +41 |   16.5 |  14.10 |   OK |     ....     |                     
+ +0.000s |   3250 |    -7845 |   16.5 |  14.10 |   OK |     ....     | >>> TRIGGER_D_STEADY_TPS_RPM_DROP
+ +0.077s |   3250 |       +0 |   16.5 |  14.10 |   OK |     ....     |                     
+ +0.152s |   3250 |       +0 |   16.5 |  14.10 |   OK |     ....     |                     
+ +0.228s |   3250 |       +0 |   16.5 |  14.10 |   OK |     ....     |                     
+ +0.305s |   3250 |       +0 |   16.5 |  14.10 |   OK |     ....     |                     
+ +0.381s |   3250 |       +0 |   16.5 |  14.10 |   OK |     ....     |                     
+ +0.457s |   3250 |       +0 |   16.5 |  14.10 |   OK |     ....     |                     
+ +0.533s |   3250 |       +0 |   16.5 |  14.10 |   OK |     ....     |                     
+ +0.610s |   3780 |    +6915 |   16.5 |  14.10 |   OK |     ....     |                     
+ +0.685s |   3777 |      -49 |   16.5 |  14.10 |   OK |     ....     |                     
+ +0.759s |   3775 |      -24 |   16.5 |  14.10 |   OK |     ....     |                     
+ +0.832s |   3775 |       +3 |   16.5 |  14.10 |   OK |     ....     |                     
+ +0.904s |   3778 |      +35 |   16.5 |  14.10 |   OK |     ....     |                     
+ +0.977s |   3782 |      +58 |   16.5 |  14.10 |   OK |     ....     |                     
+ +1.049s |   3788 |      +79 |   16.5 |  14.10 |   OK |     ....     |                     
+ +1.122s |   3794 |      +93 |   16.5 |  14.10 |   OK |     ....     |                     
+ +1.197s |   3802 |     +100 |   16.5 |  14.10 |   OK |     ....     |                     
+ +1.270s |   3809 |      +96 |   16.5 |  14.10 |   OK |     ....     |                     
+ +1.343s |   3816 |      +88 |   16.1 |  14.10 |   OK |     ....     |                     
+ +1.416s |   3820 |      +68 |   16.1 |  14.10 |   OK |     ....     |                     
+ +1.489s |   3824 |      +45 |   16.1 |  14.10 |   OK |     ....     |                     
+==============================================================================
+END OF DOSSIER
+==============================================================================

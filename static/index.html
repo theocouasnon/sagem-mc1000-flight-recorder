@@ -1,0 +1,1472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aprilia Caponord ETV 1000 - Sagem MC1000 Flight Recorder</title>
+  <style>
+    :root {
+      --bg-dark: #0f1117;
+      --panel-bg: #181b24;
+      --card-bg: #202433;
+      --border-color: #2e3448;
+      --text-main: #f0f3fa;
+      --text-dim: #8b949e;
+      --accent-cyan: #00d2ff;
+      --accent-gold: #ffb703;
+      --accent-green: #00f076;
+      --accent-red: #ff2a55;
+      --accent-blue: #3a86ff;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-dark);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      overflow-x: hidden;
+      padding: 16px;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--panel-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 16px 24px;
+      margin-bottom: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+    .brand-title {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .brand-title h1 {
+      font-size: 1.4rem;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      color: #fff;
+    }
+    .brand-title span {
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      background: #272d3f;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+    }
+    .header-status {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+    .badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      background: var(--card-bg);
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1px solid var(--border-color);
+    }
+    .pulse-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      box-shadow: 0 0 10px var(--accent-green);
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+    @keyframes efiFlash {
+      0% { box-shadow: 0 0 10px rgba(255, 42, 85, 0.6); background: rgba(255, 42, 85, 0.2); }
+      50% { box-shadow: 0 0 25px rgba(255, 42, 85, 0.95); background: rgba(255, 42, 85, 0.5); }
+      100% { box-shadow: 0 0 10px rgba(255, 42, 85, 0.6); background: rgba(255, 42, 85, 0.2); }
+    }
+    .btn-trigger {
+      background: linear-gradient(135deg, #ff2a55, #c9184a);
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.85rem;
+      border: none;
+      padding: 9px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 0 15px rgba(255, 42, 85, 0.4);
+      transition: all 0.2s;
+    }
+    .btn-trigger:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 0 25px rgba(255, 42, 85, 0.6);
+    }
+
+    /* Dashboard Layout Grid */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    @media (max-width: 1100px) {
+      .dashboard-grid { grid-template-columns: 1fr; }
+    }
+
+    /* Left: Gauges Column */
+    .gauges-col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .gauge-card {
+      background: var(--panel-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 18px;
+      position: relative;
+    }
+    .gauge-title {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+    }
+    .gauge-value {
+      font-size: 2.2rem;
+      font-weight: 800;
+      font-family: monospace;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    .gauge-unit {
+      font-size: 0.9rem;
+      color: var(--text-dim);
+      font-weight: 600;
+    }
+
+    /* Custom Meter Bar */
+    .bar-container {
+      width: 100%;
+      height: 12px;
+      background: #10121a;
+      border-radius: 6px;
+      margin-top: 12px;
+      overflow: hidden;
+      border: 1px solid #232736;
+    }
+    .bar-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 6px;
+      transition: width 0.08s ease-out, background-color 0.2s;
+    }
+
+    /* Right: Dual Oscilloscope Strip Charts */
+    .charts-col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .chart-panel {
+      background: var(--panel-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+    }
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .chart-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .legend-color { width: 10px; height: 10px; border-radius: 3px; }
+    .canvas-container {
+      position: relative;
+      flex-grow: 1;
+      min-height: 190px;
+      height: 190px;
+      background: #0d0f15;
+      border-radius: 8px;
+      border: 1px solid #202433;
+      overflow: hidden;
+    }
+    #stripChart, #stripChartIgnition {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Sagem Health Matrix */
+    .matrix-panel {
+      background: var(--panel-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 18px;
+      margin-bottom: 16px;
+    }
+    .matrix-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .matrix-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 12px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: all 0.2s;
+    }
+    .matrix-card.fault {
+      border-color: var(--accent-red);
+      background: rgba(255, 42, 85, 0.15);
+      animation: alertPulse 1.2s infinite;
+    }
+    @keyframes alertPulse {
+      0% { box-shadow: 0 0 5px rgba(255, 42, 85, 0.2); }
+      50% { box-shadow: 0 0 20px rgba(255, 42, 85, 0.5); }
+      100% { box-shadow: 0 0 5px rgba(255, 42, 85, 0.2); }
+    }
+    .matrix-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .matrix-code {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--accent-cyan);
+    }
+    .matrix-name {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #fff;
+    }
+    .matrix-status {
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 12px;
+      background: rgba(0, 240, 118, 0.15);
+      color: var(--accent-green);
+      border: 1px solid rgba(0, 240, 118, 0.3);
+    }
+    .matrix-card.fault .matrix-status {
+      background: var(--accent-red);
+      color: #fff;
+      border-color: var(--accent-red);
+    }
+
+    /* Blackbox Captures Panel */
+    .captures-panel {
+      background: var(--panel-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 18px;
+    }
+    .captures-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 0.85rem;
+    }
+    .captures-table th {
+      text-align: left;
+      padding: 10px;
+      background: #141720;
+      color: var(--text-dim);
+      border-bottom: 1px solid var(--border-color);
+    }
+    .captures-table td {
+      padding: 10px;
+      border-bottom: 1px solid #202433;
+    }
+    .btn-view {
+      background: #2d3348;
+      border: 1px solid var(--border-color);
+      color: var(--accent-cyan);
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    .btn-view:hover { background: #3a425e; }
+
+    /* Modal */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .modal-content {
+      background: var(--panel-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      width: 100%;
+      max-width: 800px;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 24px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.7);
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 12px;
+    }
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-size: 1.5rem;
+      cursor: pointer;
+    }
+    .diagnosis-box {
+      background: #1c202e;
+      border-left: 4px solid var(--accent-gold);
+      padding: 14px;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+    .btn-session {
+      background: #232838;
+      color: var(--accent-cyan);
+      font-weight: 700;
+      font-size: 0.85rem;
+      text-decoration: none;
+      border: 1px solid var(--border-color);
+      padding: 9px 16px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .btn-session:hover {
+      background: #2e354a;
+      border-color: var(--accent-cyan);
+    }
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(115px, 1fr));
+      gap: 8px;
+      margin: 12px 0;
+    }
+    .metric-card {
+      background: #141722;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 10px 8px;
+      text-align: center;
+    }
+    .metric-label {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+      margin-bottom: 4px;
+    }
+    .metric-val {
+      font-size: 1.05rem;
+      font-weight: 700;
+      font-family: monospace;
+      color: #fff;
+    }
+    .modal-tabs {
+      display: flex;
+      gap: 8px;
+      margin-top: 14px;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 8px;
+      align-items: center;
+    }
+    .tab-btn {
+      background: none;
+      border: 1px solid transparent;
+      color: var(--text-dim);
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover { color: #fff; background: #232838; }
+    .tab-btn.active {
+      background: #272f48;
+      border-color: var(--accent-cyan);
+      color: var(--accent-cyan);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="brand-title">
+      <h1>APRILIA CAPONORD ETV 1000</h1>
+      <span>Sagem MC1000 ECU</span>
+    </div>
+    <div class="header-status">
+      <div class="badge">
+        <div class="pulse-dot" id="connDot"></div>
+        <span id="connText">SCANNING...</span>
+      </div>
+      <div class="badge">
+        <span style="color: var(--text-dim)">RATE:</span>
+        <span id="hzText" style="color: var(--accent-cyan); font-family: monospace;">0.0 Hz</span>
+      </div>
+      <!-- Instrument Cluster EFI Lamp -->
+      <div class="badge" id="efiBadge" style="border: 1px solid #2d3348; background: #161922; transition: all 0.25s;">
+        <span id="efiDot" style="width: 10px; height: 10px; border-radius: 50%; background: #4b5563; display: inline-block; transition: all 0.2s;"></span>
+        <span id="efiText" style="font-weight: 800; font-family: monospace; letter-spacing: 1px; color: #8b949e; font-size: 0.85rem;">EFI: OFF</span>
+      </div>
+      <a href="/api/session/download" class="btn-session" id="btnDownloadSession" download title="Download full-ride continuous high-resolution CSV telemetry">
+        📥 FULL RIDE CSV
+      </a>
+      <button class="btn-session" id="btnHolistic" onclick="viewHolisticAnalysis()" title="Synthesize all captured stutter events into a holistic root cause conclusion" style="cursor: pointer; color: var(--accent-gold); border-color: rgba(255, 183, 3, 0.4);">
+        📊 BIGGER PICTURE
+      </button>
+      <button class="btn-trigger" id="btnManualTrigger" onclick="triggerManualCapture()">
+        ⚡ MANUAL CAPTURE
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Grid: Gauges & Strip Chart -->
+  <div class="dashboard-grid">
+
+    <!-- Gauges Column -->
+    <div class="gauges-col">
+
+      <!-- Tachometer (RPM) -->
+      <div class="gauge-card">
+        <div class="gauge-title">Engine Speed (RPM)</div>
+        <div class="gauge-value" style="color: var(--accent-cyan);">
+          <span id="valRpm">0</span>
+          <span class="gauge-unit">RPM</span>
+        </div>
+        <div class="bar-container">
+          <div class="bar-fill" id="barRpm" style="background: var(--accent-cyan);"></div>
+        </div>
+      </div>
+
+      <!-- Throttle Position (TPS) -->
+      <div class="gauge-card">
+        <div class="gauge-title">Throttle Position (TPS)</div>
+        <div class="gauge-value" style="color: var(--accent-gold);">
+          <span id="valTps">0.0</span>
+          <span class="gauge-unit">%</span>
+        </div>
+        <div class="bar-container">
+          <div class="bar-fill" id="barTps" style="background: var(--accent-gold);"></div>
+        </div>
+      </div>
+
+      <!-- Battery Voltage -->
+      <div class="gauge-card">
+        <div class="gauge-title">Battery Voltage</div>
+        <div class="gauge-value" id="wrapVolts" style="color: var(--accent-green);">
+          <span id="valVolts">0.00</span>
+          <span class="gauge-unit">V</span>
+        </div>
+        <div class="bar-container">
+          <div class="bar-fill" id="barVolts" style="background: var(--accent-green);"></div>
+        </div>
+      </div>
+
+      <!-- Coolant & Intake Temp -->
+      <div class="gauge-card">
+        <div style="display: flex; justify-content: space-between;">
+          <div>
+            <div class="gauge-title">Coolant (ECT)</div>
+            <div class="gauge-value" style="font-size: 1.6rem; color: #fff;">
+              <span id="valEct">0</span><span class="gauge-unit">°C</span>
+            </div>
+          </div>
+          <div>
+            <div class="gauge-title">Air Temp (IAT)</div>
+            <div class="gauge-value" style="font-size: 1.6rem; color: var(--text-dim);">
+              <span id="valIat">0</span><span class="gauge-unit">°C</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ignition & Combustion Dynamics -->
+      <div class="gauge-card">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+          <div>
+            <div class="gauge-title">Ignition Advance</div>
+            <div class="gauge-value" style="font-size: 1.4rem; color: var(--accent-cyan);">
+              <span id="valAdvance">0.0</span><span class="gauge-unit">°</span>
+            </div>
+          </div>
+          <div style="text-align: right;">
+            <div class="gauge-title">Coil Dwell Time</div>
+            <div class="gauge-value" style="font-size: 1.4rem; color: var(--accent-gold);">
+              <span id="valDwell">0.00</span><span class="gauge-unit">ms</span>
+            </div>
+          </div>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <div>
+            <div class="gauge-title">Engine Load</div>
+            <div class="gauge-value" style="font-size: 1.2rem; color: #fff;">
+              <span id="valLoad">0.0</span><span class="gauge-unit">%</span>
+            </div>
+          </div>
+          <div style="text-align: right;">
+            <div class="gauge-title">Manifold (MAP)</div>
+            <div class="gauge-value" style="font-size: 1.2rem; color: var(--text-dim);">
+              <span id="valMap">0</span><span class="gauge-unit">kPa</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right: Dual Oscilloscopes -->
+    <div class="charts-col">
+
+      <!-- Scope 1: Primary Dynamics (RPM, TPS, Battery) -->
+      <div class="chart-panel">
+        <div class="chart-header">
+          <div style="font-weight: 700; font-size: 0.95rem;">Primary Dynamics & Hesitation Trace</div>
+          <div class="chart-legend">
+            <div class="legend-item">
+              <div class="legend-color" style="background: var(--accent-cyan);"></div>
+              <span>RPM (0–9k)</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-color" style="background: var(--accent-gold);"></div>
+              <span>TPS (0–100%)</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-color" style="background: var(--accent-green);"></div>
+              <span>Battery (10–15V)</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-color" style="background: var(--accent-red);"></div>
+              <span>EFI Warning Light</span>
+            </div>
+          </div>
+        </div>
+        <div class="canvas-container">
+          <canvas id="stripChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Scope 2: Ignition Advance, Coil Dwell, Load & MAP -->
+      <div class="chart-panel">
+        <div class="chart-header">
+          <div style="font-weight: 700; font-size: 0.95rem;">Ignition & Combustion Dynamics Scope</div>
+          <div class="chart-legend">
+            <div class="legend-item">
+              <div class="legend-color" style="background: #c77dff;"></div>
+              <span>Advance (0–50°)</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-color" style="background: #ffbe0b;"></div>
+              <span>Dwell (1–6 ms)</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-color" style="background: #00f076;"></div>
+              <span>Load (0–100%)</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-color" style="background: #ff5470;"></div>
+              <span>MAP (20–110 kPa)</span>
+            </div>
+          </div>
+        </div>
+        <div class="canvas-container">
+          <canvas id="stripChartIgnition"></canvas>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Sagem MC1000 12-Channel Health Matrix -->
+  <div class="matrix-panel">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <div style="font-weight: 700; font-size: 0.95rem;">Sagem MC1000 Sensor & Ignition Coil Health Matrix</div>
+      <div style="font-size: 0.8rem; color: var(--text-dim);">Transient / Unlatched Anomaly Monitor</div>
+    </div>
+    <div class="matrix-grid" id="matrixGrid">
+      <!-- Cards rendered via JS -->
+    </div>
+  </div>
+
+  <!-- Flight Recorder Captures -->
+  <div class="captures-panel">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <div style="font-weight: 700; font-size: 0.95rem;">Blackbox Event Snapshots (Pre/Post-Trigger Capture)</div>
+      <div style="font-size: 0.8rem; color: var(--text-dim);" id="capturesCount">0 Captures Saved</div>
+    </div>
+    <table class="captures-table">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Trigger Reason</th>
+          <th>Automated Diagnosis Summary</th>
+          <th>Frames</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="capturesBody">
+        <tr><td colspan="5" style="color: var(--text-dim); text-align: center; padding: 20px;">No captures yet. System is monitoring for transient stutter, coil breakdown, or voltage drops.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Capture Detail Modal -->
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modalTitle" style="font-size: 1.2rem;">Capture Snapshot</h2>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+
+      <!-- Root Cause Diagnosis Box -->
+      <div class="diagnosis-box" id="modalDiagnosis"></div>
+
+      <!-- Forensic Dynamics Grid -->
+      <div class="metrics-grid" id="modalMetricsGrid">
+        <div class="metric-card">
+          <div class="metric-label">Cruise Baseline</div>
+          <div class="metric-val" id="metricBaselineRpm">-- RPM</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Stumble Trough</div>
+          <div class="metric-val" style="color: var(--accent-red);" id="metricMinRpm">-- RPM</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">RPM Drop (ΔRPM)</div>
+          <div class="metric-val" style="color: var(--accent-red);" id="metricRpmDrop">-- RPM</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Decel Rate (dRPM/dt)</div>
+          <div class="metric-val" style="color: var(--accent-gold);" id="metricDecel">-- RPM/s</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Throttle ΔTPS</div>
+          <div class="metric-val" style="color: var(--accent-cyan);" id="metricTpsDelta">-- %</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Min Battery Volts</div>
+          <div class="metric-val" style="color: var(--accent-green);" id="metricMinVolts">-- V</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">EFI Warning Light</div>
+          <div class="metric-val" id="metricEfiLight">--</div>
+        </div>
+      </div>
+
+      <!-- Modal Tabs: Oscilloscope vs Forensic Dossier Report -->
+      <div class="modal-tabs">
+        <button class="tab-btn active" id="tabBtnWaveform" onclick="switchModalTab('waveform')">📈 Oscilloscope Waveform</button>
+        <button class="tab-btn" id="tabBtnDossier" onclick="switchModalTab('dossier')">📄 Forensic Dossier Report</button>
+        <button class="tab-btn" id="btnCopyReport" onclick="copyReportToClipboard()" style="margin-left: auto;">📋 Copy Dossier</button>
+      </div>
+
+      <!-- Waveform Tab Content -->
+      <div id="viewWaveform" style="margin: 14px 0;">
+        <canvas id="modalChart" width="750" height="250" style="background: #0d0f15; border-radius: 8px; width: 100%;"></canvas>
+      </div>
+
+      <!-- Dossier Tab Content -->
+      <div id="viewDossier" style="margin: 14px 0; display: none;">
+        <pre id="modalReportText" style="background: #0d0f15; border: 1px solid var(--border-color); border-radius: 8px; padding: 14px; font-family: 'Consolas', 'Fira Code', monospace; font-size: 0.8rem; color: #e6edf3; max-height: 380px; overflow-y: auto; white-space: pre-wrap; line-height: 1.4;"></pre>
+      </div>
+
+      <!-- Footer Buttons -->
+      <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap;">
+        <a id="btnDownloadReport" class="btn-view" style="text-decoration: none; padding: 8px 16px; font-weight: 600; color: #fff; background: #2f3e63;" download>Download Dossier (.TXT)</a>
+        <a id="btnDownloadCsv" class="btn-view" style="text-decoration: none; padding: 8px 16px; font-weight: 600;" download>Download CSV</a>
+        <a id="btnDownloadJson" class="btn-view" style="text-decoration: none; padding: 8px 16px; font-weight: 600;" download>Download JSON</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Component Matrix Definitions
+    const MATRIX_CHANNELS = [
+      { id: "cps", code: "DTC 12", name: "Crank Sensor (VR Sync)", key: "crank_sync", invert: true },
+      { id: "tps", code: "DTC 15", name: "Throttle Potentiometer", key: "tps_fault" },
+      { id: "ect", code: "DTC 21", name: "Coolant Temp Sensor", key: "ect_fault" },
+      { id: "iat", code: "DTC 22", name: "Intake Air Temp", key: "iat_fault" },
+      { id: "baro", code: "DTC 23", name: "ECU Barometric Sensor", key: "baro_fault" },
+      { id: "c1", code: "DTC 33", name: "Coil 1 (Front Side)", key: "coil_fault_1" },
+      { id: "c2", code: "DTC 34", name: "Coil 2 (Front Center)", key: "coil_fault_2" },
+      { id: "c3", code: "DTC 35", name: "Coil 3 (Rear Side)", key: "coil_fault_3" },
+      { id: "c4", code: "DTC 36", name: "Coil 4 (Rear Center)", key: "coil_fault_4" },
+      { id: "fall", code: "DTC 41", name: "Tip-Over / Fall Sensor", key: "tip_over_active" },
+      { id: "inj1", code: "DTC 42", name: "Fuel Injector 1", key: "injector_fault_1" },
+      { id: "inj2", code: "DTC 43", name: "Fuel Injector 2", key: "injector_fault_2" }
+    ];
+
+    // Build Matrix HTML
+    const matrixGrid = document.getElementById("matrixGrid");
+    MATRIX_CHANNELS.forEach(ch => {
+      const card = document.createElement("div");
+      card.className = "matrix-card";
+      card.id = `card_${ch.id}`;
+      card.innerHTML = `
+        <div class="matrix-info">
+          <span class="matrix-code">${ch.code}</span>
+          <span class="matrix-name">${ch.name}</span>
+        </div>
+        <span class="matrix-status" id="status_${ch.id}">● OK</span>
+      `;
+      matrixGrid.appendChild(card);
+    });
+
+    // Time-Series Buffer for Canvas Oscilloscope (last 150 points @ ~10-15Hz)
+    const MAX_POINTS = 150;
+    const historyData = [];
+    const triggerEvents = [];
+
+    // Canvas Setup for Dual Oscilloscopes
+    const canvas = document.getElementById("stripChart");
+    const ctx = canvas.getContext("2d");
+    const canvasIgn = document.getElementById("stripChartIgnition");
+    const ctxIgn = canvasIgn ? canvasIgn.getContext("2d") : null;
+
+    function resizeCanvas() {
+      if (canvas && canvas.parentElement) {
+        const rect = canvas.parentElement.getBoundingClientRect();
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+      }
+      if (canvasIgn && canvasIgn.parentElement) {
+        const rectIgn = canvasIgn.parentElement.getBoundingClientRect();
+        canvasIgn.width = rectIgn.width;
+        canvasIgn.height = rectIgn.height;
+      }
+    }
+    window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
+
+    function renderStripChart() {
+      if (!canvas.width || !canvas.height) return;
+      const w = canvas.width;
+      const h = canvas.height;
+
+      ctx.clearRect(0, 0, w, h);
+
+      // Background gridlines
+      ctx.strokeStyle = "#1a1f2c";
+      ctx.lineWidth = 1;
+      for (let y = 0; y < h; y += 40) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+
+      if (historyData.length < 2) return;
+
+      const step = w / (MAX_POINTS - 1);
+      const startX = w - (historyData.length - 1) * step;
+
+      // 0. Draw EFI Warning Light Active Highlight Band
+      historyData.forEach((pt, i) => {
+        if (pt.efi_light_on) {
+          const x = startX + i * step;
+          ctx.fillStyle = "rgba(255, 42, 85, 0.22)";
+          ctx.fillRect(x - step / 2, 0, step + 1, h);
+          ctx.fillStyle = "rgba(255, 42, 85, 0.85)";
+          ctx.fillRect(x - step / 2, 0, step + 1, 4);
+        }
+      });
+
+      // 1. Draw RPM trace (Cyan: 0 to 9000 RPM)
+      ctx.strokeStyle = "#00d2ff";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      historyData.forEach((pt, i) => {
+        const x = startX + i * step;
+        const normRpm = Math.max(0, Math.min(9000, pt.rpm)) / 9000;
+        const y = h - normRpm * (h - 20) - 10;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      // 2. Draw TPS trace (Amber: 0 to 100%)
+      ctx.strokeStyle = "#ffb703";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      historyData.forEach((pt, i) => {
+        const x = startX + i * step;
+        const normTps = Math.max(0, Math.min(100, pt.tps)) / 100;
+        const y = h - normTps * (h - 20) - 10;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      // 3. Draw Battery Voltage (Green: 10.0V to 15.0V)
+      ctx.strokeStyle = "#00f076";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      historyData.forEach((pt, i) => {
+        const x = startX + i * step;
+        const normVolts = Math.max(0, Math.min(5, pt.volts - 10.0)) / 5.0;
+        const y = h - normVolts * (h - 20) - 10;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      // 4. Draw vertical trigger anomaly markers
+      historyData.forEach((pt, i) => {
+        if (pt.isTrigger) {
+          const x = startX + i * step;
+          ctx.strokeStyle = "rgba(255, 42, 85, 0.9)";
+          ctx.lineWidth = 2;
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, h);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          ctx.fillStyle = "#ff2a55";
+          ctx.font = "bold 11px monospace";
+          ctx.fillText("▲ " + (pt.triggerLabel || "TRIGGER"), x + 4, 20);
+        }
+      });
+    }
+
+    function renderIgnitionChart() {
+      if (!canvasIgn || !ctxIgn || !canvasIgn.width || !canvasIgn.height) return;
+      const w = canvasIgn.width;
+      const h = canvasIgn.height;
+
+      ctxIgn.clearRect(0, 0, w, h);
+
+      // Background gridlines
+      ctxIgn.strokeStyle = "#1a1f2c";
+      ctxIgn.lineWidth = 1;
+      for (let y = 0; y < h; y += 35) {
+        ctxIgn.beginPath();
+        ctxIgn.moveTo(0, y);
+        ctxIgn.lineTo(w, y);
+        ctxIgn.stroke();
+      }
+
+      if (historyData.length < 2) return;
+
+      const step = w / (MAX_POINTS - 1);
+      const startX = w - (historyData.length - 1) * step;
+
+      // 1. Draw Ignition Advance trace (Purple: 0 to 50 deg BTDC)
+      ctxIgn.strokeStyle = "#c77dff";
+      ctxIgn.lineWidth = 2.2;
+      ctxIgn.beginPath();
+      historyData.forEach((pt, i) => {
+        const x = startX + i * step;
+        const normAdv = Math.max(0, Math.min(50, pt.advance || 0)) / 50;
+        const y = h - normAdv * (h - 20) - 10;
+        if (i === 0) ctxIgn.moveTo(x, y);
+        else ctxIgn.lineTo(x, y);
+      });
+      ctxIgn.stroke();
+
+      // 2. Draw Coil Dwell Time trace (Gold/Orange: 1.0 to 6.0 ms)
+      ctxIgn.strokeStyle = "#ffbe0b";
+      ctxIgn.lineWidth = 2.0;
+      ctxIgn.beginPath();
+      historyData.forEach((pt, i) => {
+        const x = startX + i * step;
+        const normDwell = Math.max(0, Math.min(5.0, ((pt.dwell || 0) - 1.0))) / 5.0;
+        const y = h - normDwell * (h - 20) - 10;
+        if (i === 0) ctxIgn.moveTo(x, y);
+        else ctxIgn.lineTo(x, y);
+      });
+      ctxIgn.stroke();
+
+      // 3. Draw Engine Load trace (Green: 0 to 100%)
+      ctxIgn.strokeStyle = "#00f076";
+      ctxIgn.lineWidth = 1.6;
+      ctxIgn.beginPath();
+      historyData.forEach((pt, i) => {
+        const x = startX + i * step;
+        const normLoad = Math.max(0, Math.min(100, pt.load || 0)) / 100;
+        const y = h - normLoad * (h - 20) - 10;
+        if (i === 0) ctxIgn.moveTo(x, y);
+        else ctxIgn.lineTo(x, y);
+      });
+      ctxIgn.stroke();
+
+      // 4. Draw Manifold Pressure (MAP) trace (Coral/Red: 20 to 110 kPa)
+      ctxIgn.strokeStyle = "#ff5470";
+      ctxIgn.lineWidth = 1.6;
+      ctxIgn.beginPath();
+      historyData.forEach((pt, i) => {
+        const x = startX + i * step;
+        const normMap = Math.max(0, Math.min(90, ((pt.map || 0) - 20))) / 90;
+        const y = h - normMap * (h - 20) - 10;
+        if (i === 0) ctxIgn.moveTo(x, y);
+        else ctxIgn.lineTo(x, y);
+      });
+      ctxIgn.stroke();
+
+      // 5. Draw synchronized vertical trigger anomaly markers
+      historyData.forEach((pt, i) => {
+        if (pt.isTrigger) {
+          const x = startX + i * step;
+          ctxIgn.strokeStyle = "rgba(255, 42, 85, 0.9)";
+          ctxIgn.lineWidth = 2;
+          ctxIgn.setLineDash([4, 4]);
+          ctxIgn.beginPath();
+          ctxIgn.moveTo(x, 0);
+          ctxIgn.lineTo(x, h);
+          ctxIgn.stroke();
+          ctxIgn.setLineDash([]);
+
+          ctxIgn.fillStyle = "#ff2a55";
+          ctxIgn.font = "bold 11px monospace";
+          ctxIgn.fillText("▲ " + (pt.triggerLabel || "TRIGGER"), x + 4, 20);
+        }
+      });
+    }
+
+    // WebSocket Connection with Automatic HTTP Fallback Polling
+    let ws = null;
+    let fallbackPollTimer = null;
+    let isWsOpen = false;
+
+    function startFallbackPolling() {
+      if (fallbackPollTimer) return;
+      fallbackPollTimer = setInterval(async () => {
+        if (isWsOpen) {
+          clearInterval(fallbackPollTimer);
+          fallbackPollTimer = null;
+          return;
+        }
+        try {
+          const res = await fetch("/api/status");
+          if (!res.ok) return;
+          const status = await res.json();
+          if (status.last_frame) {
+            document.getElementById("connDot").style.background = status.connected ? "var(--accent-green)" : "var(--accent-gold)";
+            document.getElementById("connText").innerText = status.connected ? "CONNECTED (HTTP)" : "CONNECTING...";
+            updateDashboard({
+              type: "telemetry",
+              connected: status.connected,
+              hz: status.hz || 0,
+              total_frames: status.total_frames || 0,
+              data: status.last_frame,
+              recorder: {
+                is_capturing: status.is_capturing,
+                active_trigger: status.recorder_armed ? "ARMED" : ""
+              }
+            });
+          }
+        } catch (e) {
+          // Ignore polling errors
+        }
+      }, 150);
+    }
+
+    function stopFallbackPolling() {
+      if (fallbackPollTimer) {
+        clearInterval(fallbackPollTimer);
+        fallbackPollTimer = null;
+      }
+    }
+
+    function connectWebSocket() {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = `${protocol}//${window.location.host}/ws/telemetry`;
+      
+      try {
+        ws = new WebSocket(wsUrl);
+      } catch (err) {
+        console.warn("WebSocket initialization failed, falling back to HTTP polling:", err);
+        startFallbackPolling();
+        setTimeout(connectWebSocket, 3000);
+        return;
+      }
+
+      ws.onopen = () => {
+        isWsOpen = true;
+        stopFallbackPolling();
+        document.getElementById("connDot").style.background = "var(--accent-green)";
+        document.getElementById("connText").innerText = "CONNECTED (WS)";
+      };
+
+      ws.onclose = () => {
+        isWsOpen = false;
+        startFallbackPolling();
+        setTimeout(connectWebSocket, 2500);
+      };
+
+      ws.onerror = (err) => {
+        isWsOpen = false;
+        startFallbackPolling();
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "telemetry") {
+            updateDashboard(msg);
+          } else if (msg.type === "init") {
+            if (msg.last_frame) {
+              updateDashboard({
+                type: "telemetry",
+                connected: msg.connected,
+                hz: msg.hz || 0,
+                total_frames: msg.total_frames || 0,
+                data: msg.last_frame
+              });
+            }
+          } else if (msg.type === "capture_event") {
+            refreshCaptures();
+          }
+        } catch (e) {
+          console.error("Error parsing websocket message:", e);
+        }
+      };
+    }
+
+    function updateDashboard(msg) {
+      if (!msg || !msg.data) return;
+      document.getElementById("hzText").innerText = `${(msg.hz || 0).toFixed(1)} Hz`;
+      const d = msg.data;
+
+      // Update Gauges
+      document.getElementById("valRpm").innerText = Math.round(d.rpm);
+      const rpmPct = Math.min(100, (d.rpm / 9000) * 100);
+      const barRpm = document.getElementById("barRpm");
+      barRpm.style.width = `${rpmPct}%`;
+      barRpm.style.background = d.rpm > 8000 ? "var(--accent-red)" : d.rpm > 6000 ? "var(--accent-gold)" : "var(--accent-cyan)";
+
+      document.getElementById("valTps").innerText = d.tps.toFixed(1);
+      document.getElementById("barTps").style.width = `${Math.min(100, d.tps)}%`;
+
+      document.getElementById("valVolts").innerText = d.battery_volts.toFixed(2);
+      const voltPct = Math.max(0, Math.min(100, ((d.battery_volts - 10) / 5) * 100));
+      const barVolts = document.getElementById("barVolts");
+      barVolts.style.width = `${voltPct}%`;
+      const wrapVolts = document.getElementById("wrapVolts");
+      if (d.battery_volts < 11.2) {
+        barVolts.style.background = "var(--accent-red)";
+        wrapVolts.style.color = "var(--accent-red)";
+      } else {
+        barVolts.style.background = "var(--accent-green)";
+        wrapVolts.style.color = "var(--accent-green)";
+      }
+
+      document.getElementById("valEct").innerText = Math.round(d.coolant_temp);
+      document.getElementById("valIat").innerText = Math.round(d.air_temp);
+
+      if (d.timing_advance_deg !== undefined) {
+        document.getElementById("valAdvance").innerText = d.timing_advance_deg.toFixed(1);
+      }
+      if (d.coil_dwell_ms !== undefined) {
+        document.getElementById("valDwell").innerText = d.coil_dwell_ms.toFixed(2);
+      }
+      if (d.engine_load_pct !== undefined) {
+        document.getElementById("valLoad").innerText = d.engine_load_pct.toFixed(1);
+      }
+      if (d.map_kpa !== undefined) {
+        document.getElementById("valMap").innerText = Math.round(d.map_kpa);
+      }
+
+      // Append to Strip Chart History
+      const isTrigger = msg.recorder && msg.recorder.is_capturing && msg.recorder.active_trigger;
+      historyData.push({
+        rpm: d.rpm,
+        tps: d.tps,
+        volts: d.battery_volts,
+        advance: d.timing_advance_deg !== undefined ? d.timing_advance_deg : 0,
+        dwell: d.coil_dwell_ms !== undefined ? d.coil_dwell_ms : 0,
+        load: d.engine_load_pct !== undefined ? d.engine_load_pct : 0,
+        map: d.map_kpa !== undefined ? d.map_kpa : 0,
+        efi_light_on: !!d.efi_light_on,
+        isTrigger: isTrigger,
+        triggerLabel: msg.recorder ? msg.recorder.active_trigger : ""
+      });
+      if (historyData.length > MAX_POINTS) historyData.shift();
+      renderStripChart();
+      renderIgnitionChart();
+
+      // Update Dashboard EFI Warning Lamp
+      const efiBadge = document.getElementById("efiBadge");
+      const efiDot = document.getElementById("efiDot");
+      const efiText = document.getElementById("efiText");
+      if (efiBadge && efiDot && efiText) {
+        if (d.efi_light_on) {
+          efiBadge.style.animation = "efiFlash 0.8s infinite";
+          efiBadge.style.borderColor = "var(--accent-red)";
+          efiDot.style.background = "var(--accent-red)";
+          efiDot.style.boxShadow = "0 0 12px var(--accent-red)";
+          efiText.innerText = "🔴 EFI ACTIVE";
+          efiText.style.color = "#ff2a55";
+        } else {
+          efiBadge.style.animation = "none";
+          efiBadge.style.borderColor = "#2d3348";
+          efiBadge.style.background = "#161922";
+          efiDot.style.background = "#4b5563";
+          efiDot.style.boxShadow = "none";
+          efiText.innerText = "EFI: OFF";
+          efiText.style.color = "#8b949e";
+        }
+      }
+
+      // Update Health Matrix
+      const dtcs = d.active_dtcs || [];
+      MATRIX_CHANNELS.forEach(ch => {
+        const card = document.getElementById(`card_${ch.id}`);
+        const status = document.getElementById(`status_${ch.id}`);
+        let isFault = false;
+
+        if (ch.id === "cps") {
+          isFault = !d.crank_sync && d.rpm > 300 || dtcs.includes(12);
+        } else if (ch.id === "c1") {
+          isFault = d.coil_fault_1 || dtcs.includes(33);
+        } else if (ch.id === "c2") {
+          isFault = d.coil_fault_2 || dtcs.includes(34);
+        } else if (ch.id === "c3") {
+          isFault = d.coil_fault_3 || dtcs.includes(35);
+        } else if (ch.id === "c4") {
+          isFault = d.coil_fault_4 || dtcs.includes(36);
+        } else if (ch.id === "fall") {
+          isFault = d.tip_over_active || dtcs.includes(41);
+        } else if (ch.id === "tps") {
+          isFault = dtcs.includes(15);
+        } else if (ch.id === "ect") {
+          isFault = dtcs.includes(21);
+        }
+
+        if (isFault) {
+          card.classList.add("fault");
+          status.innerText = "▲ FAULT";
+        } else {
+          card.classList.remove("fault");
+          status.innerText = "● OK";
+        }
+      });
+    }
+
+    async function triggerManualCapture() {
+      try {
+        await fetch("/api/trigger", { method: "POST" });
+      } catch (e) {
+        console.error("Trigger error:", e);
+      }
+    }
+
+    async function refreshCaptures() {
+      try {
+        const res = await fetch("/api/captures");
+        const json = await res.json();
+        const captures = json.captures || [];
+        document.getElementById("capturesCount").innerText = `${captures.length} Captures Saved`;
+
+        const tbody = document.getElementById("capturesBody");
+        if (captures.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="5" style="color: var(--text-dim); text-align: center; padding: 20px;">No captures yet. System is monitoring for transient stutter, coil breakdown, or voltage drops.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = captures.map(c => `
+          <tr>
+            <td style="font-family: monospace; color: var(--accent-cyan);">${c.iso_time.split("T")[1]?.slice(0, 8) || c.iso_time}</td>
+            <td><strong style="color: var(--accent-gold);">${c.trigger_type}</strong></td>
+            <td style="font-size: 0.8rem; max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${c.diagnosis_summary}</td>
+            <td>${c.total_frames}</td>
+            <td>
+              <button class="btn-view" onclick="viewCapture('${c.json_name}', 'waveform')">Inspect</button>
+              <button class="btn-view" style="color: var(--accent-gold); margin-left: 4px;" onclick="viewCapture('${c.json_name}', 'dossier')">Dossier</button>
+            </td>
+          </tr>
+        `).join("");
+      } catch (e) {
+        console.error("Error refreshing captures:", e);
+      }
+    }
+
+    let currentReportText = "";
+
+    function switchModalTab(tab) {
+      const btnWave = document.getElementById("tabBtnWaveform");
+      const btnDoss = document.getElementById("tabBtnDossier");
+      const viewWave = document.getElementById("viewWaveform");
+      const viewDoss = document.getElementById("viewDossier");
+
+      if (tab === "waveform") {
+        btnWave.classList.add("active");
+        btnDoss.classList.remove("active");
+        viewWave.style.display = "block";
+        viewDoss.style.display = "none";
+      } else {
+        btnDoss.classList.add("active");
+        btnWave.classList.remove("active");
+        viewWave.style.display = "none";
+        viewDoss.style.display = "block";
+      }
+    }
+
+    async function copyReportToClipboard() {
+      if (!currentReportText) return;
+      try {
+        await navigator.clipboard.writeText(currentReportText);
+        const btn = document.getElementById("btnCopyReport");
+        const orig = btn.innerText;
+        btn.innerText = "✓ Copied!";
+        setTimeout(() => { btn.innerText = orig; }, 1800);
+      } catch (e) {
+        console.error("Copy failed:", e);
+      }
+    }
+
+    async function viewCapture(jsonName, defaultTab = "waveform") {
+      try {
+        const res = await fetch(`/api/captures/${jsonName}`);
+        const data = await res.json();
+
+        document.getElementById("modalTitle").innerText = `${data.trigger_type} Snapshot (${data.trigger_iso_time})`;
+        document.getElementById("modalDiagnosis").innerText = data.diagnosis_summary;
+
+        // Forensic Dynamics Metrics
+        const m = data.forensic_metrics || {};
+        document.getElementById("metricBaselineRpm").innerText = m.pre_event_avg_rpm ? `${m.pre_event_avg_rpm} RPM` : "--";
+        document.getElementById("metricMinRpm").innerText = m.min_rpm ? `${m.min_rpm} RPM` : "--";
+        document.getElementById("metricRpmDrop").innerText = m.rpm_drop ? `-${m.rpm_drop} RPM` : "--";
+        document.getElementById("metricDecel").innerText = m.max_deceleration_rpm_s ? `${m.max_deceleration_rpm_s} RPM/s` : "--";
+        document.getElementById("metricTpsDelta").innerText = m.tps_delta !== undefined ? `±${m.tps_delta}%` : "--";
+        document.getElementById("metricMinVolts").innerText = m.min_battery_volts ? `${m.min_battery_volts} V` : "--";
+
+        const tf = data.trigger_frame || {};
+        const isEfi = tf.efi_light_on || (data.frames && data.frames.some(f => f.efi_light_on));
+        const efiEl = document.getElementById("metricEfiLight");
+        if (efiEl) {
+          efiEl.innerText = isEfi ? "🔴 ACTIVE" : "OFF";
+          efiEl.style.color = isEfi ? "var(--accent-red)" : "var(--text-dim)";
+        }
+
+        // Download Links
+        const btnCsv = document.getElementById("btnDownloadCsv");
+        const btnJson = document.getElementById("btnDownloadJson");
+        btnCsv.style.display = "inline-block";
+        btnJson.style.display = "inline-block";
+        btnCsv.href = `/api/captures/${data.event_id}.csv`;
+        btnJson.href = `/api/captures/${jsonName}`;
+        document.getElementById("btnDownloadReport").href = `/api/captures/${data.event_id}_report.txt`;
+
+        // Report Text
+        currentReportText = data.forensic_report || "";
+        if (!currentReportText) {
+          try {
+            const repRes = await fetch(`/api/captures/${data.event_id}_report.txt`);
+            if (repRes.ok) currentReportText = await repRes.text();
+          } catch (err) {
+            currentReportText = "Dossier report not available.";
+          }
+        }
+        document.getElementById("modalReportText").innerText = currentReportText;
+
+        drawModalChart(data.frames || []);
+        switchModalTab(defaultTab);
+        document.getElementById("modalBackdrop").style.display = "flex";
+      } catch (e) {
+        alert("Error loading capture: " + e);
+      }
+    }
+
+    async function viewHolisticAnalysis() {
+      try {
+        const res = await fetch("/api/analysis/holistic");
+        const data = await res.json();
+        document.getElementById("modalTitle").innerText = `Holistic Bigger-Picture Forensic Analysis (${data.total_events} Events)`;
+        document.getElementById("modalDiagnosis").innerText = `Cross-event aggregate synthesis across all recorded blackbox events. Operating correlations, hardware attribution, and holistic root-cause conclusion.`;
+
+        const a = data.analysis || {};
+        const r = a.rpm_cluster || {};
+        const s = a.severity || {};
+        const ign = a.ignition_and_electrical || {};
+
+        document.getElementById("metricBaselineRpm").innerText = r.avg ? `${r.avg} RPM` : "--";
+        document.getElementById("metricMinRpm").innerText = r.min ? `${r.min} RPM` : "--";
+        document.getElementById("metricRpmDrop").innerText = s.max_rpm_drop ? `-${s.max_rpm_drop} RPM` : "--";
+        document.getElementById("metricDecel").innerText = s.max_deceleration_rpm_s ? `${s.max_deceleration_rpm_s} RPM/s` : "--";
+        document.getElementById("metricTpsDelta").innerText = a.tps_cluster ? `${a.tps_cluster.min}-${a.tps_cluster.max}%` : "--";
+        document.getElementById("metricMinVolts").innerText = ign.min_voltage ? `${ign.min_voltage} V` : "--";
+
+        const efiCount = a.fault_attributions ? a.fault_attributions.efi_light_events : 0;
+        const efiEl = document.getElementById("metricEfiLight");
+        if (efiEl) {
+          efiEl.innerText = `${efiCount} / ${data.total_events}`;
+          efiEl.style.color = efiCount > 0 ? "var(--accent-red)" : "var(--text-dim)";
+        }
+
+        currentReportText = data.report || "No analysis available.";
+        document.getElementById("modalReportText").innerText = currentReportText;
+
+        document.getElementById("btnDownloadCsv").style.display = "none";
+        document.getElementById("btnDownloadJson").style.display = "none";
+        document.getElementById("btnDownloadReport").href = "/api/captures/holistic_session_summary.txt";
+
+        switchModalTab("dossier");
+        document.getElementById("modalBackdrop").style.display = "flex";
+      } catch (e) {
+        alert("Error loading holistic analysis: " + e);
+      }
+    }
+
+    function closeModal() {
+      document.getElementById("modalBackdrop").style.display = "none";
+    }
+
+    function drawModalChart(frames) {
+      const c = document.getElementById("modalChart");
+      const ctx2 = c.getContext("2d");
+      ctx2.clearRect(0, 0, c.width, c.height);
+
+      if (frames.length < 2) return;
+
+      const w = c.width;
+      const h = c.height;
+      const step = w / (frames.length - 1);
+
+      // Gridlines
+      ctx2.strokeStyle = "#1a1f2c";
+      ctx2.lineWidth = 1;
+      for (let y = 0; y < h; y += 40) {
+        ctx2.beginPath();
+        ctx2.moveTo(0, y);
+        ctx2.lineTo(w, y);
+        ctx2.stroke();
+      }
+
+      // 0. Draw EFI Warning Light Active Highlight Band
+      frames.forEach((f, i) => {
+        if (f.efi_light_on) {
+          const x = i * step;
+          ctx2.fillStyle = "rgba(255, 42, 85, 0.22)";
+          ctx2.fillRect(x - step / 2, 0, step + 1, h);
+          ctx2.fillStyle = "rgba(255, 42, 85, 0.85)";
+          ctx2.fillRect(x - step / 2, 0, step + 1, 4);
+        }
+      });
+
+      // 1. Draw Battery Volts (Green: 10-15V)
+      ctx2.strokeStyle = "#00f076";
+      ctx2.lineWidth = 1.4;
+      ctx2.beginPath();
+      frames.forEach((f, i) => {
+        const x = i * step;
+        const normV = Math.max(0, Math.min(5, ((f.battery_volts || 12) - 10.0))) / 5.0;
+        const y = h - normV * (h - 20) - 10;
+        if (i === 0) ctx2.moveTo(x, y);
+        else ctx2.lineTo(x, y);
+      });
+      ctx2.stroke();
+
+      // 2. Draw Timing Advance if present (Purple: 0-50 deg BTDC)
+      const hasAdvance = frames.some(f => f.timing_advance_deg !== undefined && f.timing_advance_deg > 0);
+      if (hasAdvance) {
+        ctx2.strokeStyle = "#c77dff";
+        ctx2.lineWidth = 1.8;
+        ctx2.beginPath();
+        frames.forEach((f, i) => {
+          const x = i * step;
+          const normAdv = Math.max(0, Math.min(50, f.timing_advance_deg || 0)) / 50;
+          const y = h - normAdv * (h - 20) - 10;
+          if (i === 0) ctx2.moveTo(x, y);
+          else ctx2.lineTo(x, y);
+        });
+        ctx2.stroke();
+      }
+
+      // 3. Draw TPS (Amber: 0-100%)
+      ctx2.strokeStyle = "#ffb703";
+      ctx2.lineWidth = 2;
+      ctx2.beginPath();
+      frames.forEach((f, i) => {
+        const x = i * step;
+        const y = h - (Math.max(0, Math.min(100, f.tps)) / 100) * (h - 20) - 10;
+        if (i === 0) ctx2.moveTo(x, y);
+        else ctx2.lineTo(x, y);
+      });
+      ctx2.stroke();
+
+      // 4. Draw RPM (Cyan: 0-9000)
+      ctx2.strokeStyle = "#00d2ff";
+      ctx2.lineWidth = 2.5;
+      ctx2.beginPath();
+      frames.forEach((f, i) => {
+        const x = i * step;
+        const y = h - (Math.max(0, Math.min(9000, f.rpm)) / 9000) * (h - 20) - 10;
+        if (i === 0) ctx2.moveTo(x, y);
+        else ctx2.lineTo(x, y);
+      });
+      ctx2.stroke();
+
+      // Center trigger line (pre-trigger transition, frame 30 or trigger index)
+      const trigIndex = frames.findIndex(f => f.is_trigger) >= 0 ? frames.findIndex(f => f.is_trigger) : Math.min(30, Math.floor(frames.length / 2));
+      const trigX = trigIndex * step;
+      ctx2.strokeStyle = "#ff2a55";
+      ctx2.setLineDash([4, 4]);
+      ctx2.beginPath();
+      ctx2.moveTo(trigX, 0);
+      ctx2.lineTo(trigX, h);
+      ctx2.stroke();
+      ctx2.setLineDash([]);
+      ctx2.fillStyle = "#ff2a55";
+      ctx2.font = "bold 11px monospace";
+      ctx2.fillText("▲ TRIGGER POINT", trigX + 6, 20);
+    }
+
+    // Init
+    connectWebSocket();
+    refreshCaptures();
+    setInterval(refreshCaptures, 4000);
+  </script>
+</body>
+</html>

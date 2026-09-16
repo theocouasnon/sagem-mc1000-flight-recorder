@@ -1,0 +1,1 @@
+timestamp,elapsed_sec,rpm,drpm_dt,tps_pct,dtps_dt,timing_advance_deg,coil_dwell_ms,engine_load_pct,map_kpa,injection_time_ms,battery_volts,dvolts_dt,coolant_temp_c,air_temp_c,crank_sync,coil_1_fault,coil_2_fault,coil_3_fault,coil_4_fault,tip_over,active_dtcs,trigger_event,raw_hex

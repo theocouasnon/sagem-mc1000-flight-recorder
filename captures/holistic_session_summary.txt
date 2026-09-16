@@ -1,0 +1,48 @@
+==============================================================================
+APRILIA CAPONORD ETV 1000 - SAGEM MC1000 HOLISTIC BIGGER-PICTURE ANALYSIS
+==============================================================================
+Analyzed Anomaly Captures : 14 distinct event(s)
+Trigger Conditions Met   : TRIGGER_A_FAULT_DTC (x8), TRIGGER_C_VOLTAGE_DIP (x1), TRIGGER_D_STEADY_TPS_RPM_DROP (x5)
+Coolant Temp Operating Window: 35.0 deg C to 79.0 deg C
+------------------------------------------------------------------------------
+1. CRITICAL OPERATIONAL CORRELATIONS
+------------------------------------------------------------------------------
+- RPM Stumble Band    : Centered around 3679.6 RPM (Range: 1100.0 - 4240.8 RPM)
+- Throttle Load Range : Constant cruise 4.31% to 29.8% TPS (Mean: 22.41%)
+- Hesitation Severity : Average drop of -892.7 RPM (Peak Drop: -1574.4 RPM)
+- Peak Decel Rate     : 7983.9 RPM/sec instant deceleration
+- Electrical Bus      : Rock-solid 13.84V average (Min: 10.45V) -> Charging circuit HEALTHY
+- Ignition Advance    : Operating at 0 deg BTDC (Dwell: 0 ms)
+
+------------------------------------------------------------------------------
+2. HARDWARE ATTRIBUTION & SUSPECT MATRIX
+------------------------------------------------------------------------------
+- Coil Flags Active During Event: Coil 1 (Front Side): 6x, Coil 2 (Front Center): 0x, Coil 3 (Rear Side): 0x, Coil 4 (Rear Center): 0x
+- Active Diagnostic Trouble Codes: Code 33 (11x), Code 12 (1x)
+- Crankshaft VR Pick-up Loss: 1 event(s) showed sensor loss
+
+------------------------------------------------------------------------------
+3. HOLISTIC ROOT CAUSE CONCLUSION
+------------------------------------------------------------------------------
+- General anomaly detected across 14 event(s). Review chronological log table below.
+
+------------------------------------------------------------------------------
+4. EVENT CATALOG (ALL CAPTURES)
+------------------------------------------------------------------------------
+Event Timestamp        | Trigger Type               |    RPM |  TPS % |    Drop |  Volts
+------------------------------------------------------------------------------
+2026-09-13 18:55:51    | TRIGGER_A_FAULT_DTC        |   4064 |   27.8 |      0 |  14.10V
+2026-09-13 18:56:02    | TRIGGER_A_FAULT_DTC        |   1100 |   24.7 |      0 |  14.10V
+2026-09-13 18:56:17    | TRIGGER_C_VOLTAGE_DIP      |   4052 |   27.8 |      0 |  10.45V
+2026-09-13 18:56:40    | TRIGGER_A_FAULT_DTC        |   4187 |   29.4 |      0 |  14.10V
+2026-09-13 19:24:31    | TRIGGER_A_FAULT_DTC        |   3250 |   16.5 |      0 |  14.10V
+2026-09-13 19:25:02    | TRIGGER_D_STEADY_TPS_RPM_DROP |   3250 |   16.5 |      0 |  14.10V
+2026-09-13 19:25:27    | TRIGGER_D_STEADY_TPS_RPM_DROP |   3250 |   16.5 |      0 |  14.10V
+2026-09-13 20:07:47    | TRIGGER_A_FAULT_DTC        |   4216 |   29.4 |      0 |  14.10V
+2026-09-13 20:08:00    | TRIGGER_A_FAULT_DTC        |   4108 |   28.2 |      0 |  14.10V
+2026-09-13 20:09:25    | TRIGGER_A_FAULT_DTC        |   4241 |   29.8 |      0 |  14.10V
+2026-09-13 20:09:32    | TRIGGER_A_FAULT_DTC        |   4226 |   29.8 |      0 |  14.10V
+2026-09-13 20:14:30    | TRIGGER_D_STEADY_TPS_RPM_DROP |   3250 |   16.5 |    552 |  14.10V
+2026-09-13 20:15:07    | TRIGGER_D_STEADY_TPS_RPM_DROP |   3250 |   16.5 |    551 |  14.10V
+2026-09-14 09:45:15    | TRIGGER_D_STEADY_TPS_RPM_DROP |   3307 |    4.3 |   1574 |  14.10V
+==============================================================================

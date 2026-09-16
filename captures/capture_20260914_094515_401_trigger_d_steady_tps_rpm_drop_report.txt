@@ -1,0 +1,99 @@
+==============================================================================
+APRILIA CAPONORD ETV 1000 (ROTEX V990) - SAGEM MC1000 FLIGHT RECORDER
+FORENSIC INCIDENT INVESTIGATION DOSSIER
+==============================================================================
+Incident ID        : capture_20260914_094515_401_trigger_d_steady_tps_rpm_drop
+Timestamp (Local)  : 2026-09-14 09:45:15.401
+Trigger Reason     : TRIGGER_D_STEADY_TPS_RPM_DROP
+ECU Architecture   : SAGEM MC1000 (KWP2000 / ISO 14230 @ 10,400 baud)
+Half-Duplex Line   : K-Line (TX Echo-Stripping Verified)
+------------------------------------------------------------------------------
+1. AUTOMATED ROOT CAUSE DIAGNOSIS
+------------------------------------------------------------------------------
+Trigger: Constant TPS Cruising Stutter / Misfire (RPM: 3307, TPS: 4.3%, Volts: 14.10V, ECT: 35.0°C). Analysis: Sudden RPM drop while throttle held constant above idle. Classic Caponord cruising hesitation under load. Elevated combustion pressure during steady cruise creates high secondary voltage demand, causing failing pencil coil(s) (Coils 33-36) to arc through the body to the cylinder head, or triggering VR pick-up timing jitter. Note: Does not occur at idle due to low cylinder pressure.
+
+------------------------------------------------------------------------------
+2. TRIGGER INSTANTANEOUS SNAPSHOT (T = 0.000s)
+------------------------------------------------------------------------------
+  Engine Speed      : 3307.0 RPM  (dRPM/dt: -557.2 RPM/s)
+  Throttle Position : 4.31 %  (dTPS/dt: +2.70 %/s)
+  Battery Voltage   : 14.10 V  (dVolts/dt: +0.000 V/s)
+  Coolant Temp (ECT): 35.0 °C
+  Intake Air (IAT)  : 22.0 °C
+  Crank Sync Status : OK (Synchronized)
+  Coil 1 Fault (FS) : Normal
+  Coil 2 Fault (FC) : Normal
+  Coil 3 Fault (RS) : Normal
+  Coil 4 Fault (RC) : Normal
+  Tip-Over / Fall   : Normal
+  Active DTC Codes  : None
+  Raw KWP Hex Packet: RPM:486bd1410c33acb0 TPS:486bd141110be1
+
+------------------------------------------------------------------------------
+3. FORENSIC DYNAMICS & STUMBLE METRICS
+------------------------------------------------------------------------------
+  Pre-Event Baseline RPM : 3786.4 RPM
+  Throttle Stability ΔTPS : 19.61 % (steady throttle confirmed)
+  Stumble RPM Trough     : 2212.0 RPM
+  Total RPM Hesitation   : -1574.4 RPM
+  Max Deceleration Rate  : 5587.9 RPM/sec
+  Minimum Battery Volts  : 14.10 V
+  Stumble Duration       : 9095 ms
+
+------------------------------------------------------------------------------
+4. PHYSICAL & ELECTRICAL MECHANISM ANALYSIS
+------------------------------------------------------------------------------
+  Why does this occur during steady cruising and NEVER at idle?
+  * IDLE DYNAMICS (RPM < 1500, TPS < 2%): High intake manifold depression
+    (vacuum) reduces cylinder air charge. Peak compression pressure at the
+    moment of spark is low (~4-6 bar). Spark plug ionization breakdown voltage
+    is low (~8-12 kV). Weak coil insulation easily contains this voltage.
+
+  * CRUISE DYNAMICS (RPM 2500-4500, TPS 10-25%): Engine operates under steady
+    load. Throttle butterfly admits substantial air mass. Cylinder pressure
+    at ignition advance reaches ~12-18 bar. Paschen's Law dictates that spark
+    gap breakdown voltage surges to 20-28 kV.
+
+  * SAGEM MC1000 TRANSIENT FLASH QUIRK: Aging JCI pencil coils (Coils 33-36)
+    develop dielectric micro-fractures in the secondary winding insulation.
+    When 25+ kV is demanded under cruising load, the secondary voltage arcs
+    internally or punches through the silicone boot to the aluminum spark well.
+    The Sagem ECU senses primary current collapse anomaly, triggering a momentary
+    EFI warning flash and engine stumble. Because the coil recovers once engine
+    load drops or throttle modulates, the ECU clears the fault before latching
+    it into permanent NVRAM storage (unlatched transient).
+
+------------------------------------------------------------------------------
+5. ACTIONABLE REPAIR RECOMMENDATIONS
+------------------------------------------------------------------------------
+  1. COILS: Replace failing pencil coil(s) with Peugeot/Renault equivalents
+     (e.g., Valeo 245040 / Bougicord 157800 / Beru ZS354 / Sagem 2526180A).
+     Check Front Side (Coil 1) and Rear Side (Coil 3) as they run hottest.
+  2. CRANK SENSOR (VR PICK-UP): Inspect gap between sensor tip and flywheel teeth
+     (spec: 0.60 mm - 0.70 mm). Clean metallic debris from magnetic pole face.
+  3. ELECTRICAL BROWNOUT: Check Caponord brown 3-pin alternator connector under
+     tank and white round connector near battery for melting/charring.
+
+------------------------------------------------------------------------------
+6. CHRONOLOGICAL TELEMETRY TIMELINE (-1.0s to +1.0s)
+------------------------------------------------------------------------------
+  Offset |    RPM |  dRPM/dt |  TPS % |  Volts | Sync | Coils (1234) | Marker              
+------------------------------------------------------------------------------
+ -1.352s |   3765 |    +1661 |    7.8 |  14.10 |   OK |     ....     |                     
+ -1.216s |   4044 |    +2048 |    7.5 |  14.10 |   OK |     ....     |                     
+ -1.071s |   4150 |     +733 |    7.5 |  14.10 |   OK |     ....     |                     
+ -0.915s |   4266 |     +744 |    7.5 |  14.10 |   OK |     ....     |                     
+ -0.433s |   4008 |     -534 |    4.3 |  14.10 |   OK |     ....     |                     
+ -0.280s |   3611 |    -2604 |    3.9 |  14.10 |   OK |     ....     |                     
+ -0.145s |   3388 |    -1654 |    3.9 |  14.10 |   OK |     ....     |                     
+ +0.000s |   3307 |     -557 |    4.3 |  14.10 |   OK |     ....     | >>> TRIGGER_D_STEADY_TPS_RPM_DROP
+ +0.154s |   3330 |     +149 |    4.7 |  14.10 |   OK |     ....     |                     
+ +0.303s |   3341 |      +74 |    4.7 |  14.10 |   OK |     ....     |                     
+ +0.447s |   3371 |     +208 |    5.1 |  14.10 |   OK |     ....     |                     
+ +0.593s |   3393 |     +151 |    5.1 |  14.10 |   OK |     ....     |                     
+ +1.105s |   3450 |     +111 |    5.1 |  14.10 |   OK |     ....     |                     
+ +1.247s |   3466 |     +113 |    5.1 |  14.10 |   OK |     ....     |                     
+ +1.391s |   3460 |      -42 |    5.1 |  14.10 |   OK |     ....     |                     
+==============================================================================
+END OF DOSSIER
+==============================================================================
