@@ -61,6 +61,8 @@ Source: `captures/session_20260917_171559.csv` (377 s) and
 | L6 | Dips do not consistently reach the closed-throttle floor. They land at 6.7, 11.0, 12.5, 16.5, 22.0, 37.6. | 4/5 |
 | L7 | Dropouts across the whole 17 Sep ride are spread over 8 throttle bands from 20% to 60% — not clustered at one angle. | 4/5 |
 | L8 | Two events (t=339.39, 341.06 in log 1) are a different signature: rock-steady 62-65% throttle, no dip at all, RPM bleeding 4960 to 3632, advance frozen at 25.5 deg, ending in a 4.9 s engine stop. Rider confirms this was deliberate. | 5/5 |
+| L10 | **Timing test.** Restricted to *interior* dips (a reading below its neighbours on both sides, throttle open either side — a shape rider input cannot produce), 7 coincide with an RPM loss >=8%: 4 in the same frame, 2 leading it, 1 lagging. So the dip does not systematically follow the cut. Weak (n=7) but it is the test that would have falsified H1, and it did not. | 3/5 |
+| L11 | A first, looser version of that test appeared to show the dip lagging 20 times out of 31. That version used a +/-1.7 s window and was picking up the deliberate throttle-offs made after a cut. Discarded. | 5/5 |
 | L9 | No stored DTCs ever appear. The rider has never had a code stored, across the whole history of the fault. | 4/5 |
 
 ## Facts — garage tests, 17 Sep (all clean)
