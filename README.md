@@ -2,6 +2,18 @@
 
 A modular Python CLI diagnostics and real-time blackbox flight recorder for the **Aprilia Caponord ETV 1000** (and RST 1000 Futura) equipped with the **Sagem MC1000 ECU**, communicating over an **FTDI FT232RL KKL 409.1 USB cable**.
 
+## Investigation documents
+
+The recorder exists to diagnose one specific intermittent fault. Three files
+track that work and are the place to look first:
+
+| File | Contents |
+|---|---|
+| [SYMPTOMS.md](SYMPTOMS.md) | Every observation made, split into facts and hypotheses, each rated 1–5 for confidence. |
+| [RECORDER_SETUP.md](RECORDER_SETUP.md) | What each recorder mode polls and at what rate, how to invoke it, and the history of what each configuration change cost. |
+| [ANALYSIS.md](ANALYSIS.md) | Where the diagnosis stands, the candidate causes, and the next steps in priority order. |
+| [GARAGE_TESTS.md](GARAGE_TESTS.md) | Stationary test runbook. |
+
 ---
 
 ## 1. Problem Solved: Capturing Unlatched Transient Glitches
@@ -11,10 +23,10 @@ A notorious issue on the Sagem MC1000 ECU is that intermittent faults—most com
 Standard static diagnostic tools like TuneECU or dealer scanners only inspect historical stored memory and report "No Fault Codes Found".
 
 This tool operates as an **active real-time flight recorder**:
-1. Continuously polls high-speed telemetry and fault status at **~12–16 Hz**.
-2. Maintains a **50-frame rolling circular buffer** (~5 seconds of runtime history).
-3. Detects transient anomalies in real-time (instantaneous coil fault bits, sudden RPM collapse under load, or voltage dips < 11.2V).
-4. On any anomaly, it freezes **3.0 seconds of pre-trigger history** and records **2.0 seconds of post-trigger telemetry**.
+1. Continuously polls telemetry and fault status. The K-line allows about **14.7 queries per second in total**, which is divided between the signals being polled — see [RECORDER_SETUP.md](RECORDER_SETUP.md) for the per-mode rates.
+2. Maintains a **time-based rolling buffer**, not a frame-count one, so the history window is the same length whatever the poll rate.
+3. Detects transient anomalies in real-time (instantaneous coil fault bits, sudden RPM collapse under load, within-cycle throttle-signal dropouts).
+4. On any anomaly, it freezes **8.0 seconds of pre-trigger history** and records **3.0 seconds of post-trigger telemetry**.
 5. Immediately serializes the 5-second snapshot to **CSV** and **JSON** with an **automated diagnostic diagnosis and root-cause analysis**.
 
 ---
