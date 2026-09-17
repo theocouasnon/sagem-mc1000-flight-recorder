@@ -19,6 +19,18 @@ distribute across RPM, throttle and coolant temperature.
 python tools/analysis/anomaly_scan.py captures/session_20260917_094743.csv
 ```
 
+**`sweep_scan.py <session.csv>`** — for stationary throttle sweeps logged with
+`--focus tps`. Reports whether dropouts cluster at one throttle angle (a dead
+spot in the sensor's resistive track) or spread across angles (wiring, connector
+or supply), and how much of the throttle range the sweep actually covered — a
+dead spot outside the swept range would otherwise read as a clean result.
+
+```bash
+python tools/analysis/sweep_scan.py captures/session_20260917_133511.csv
+```
+
+See `GARAGE_TESTS.md` for the test sequence it is meant to support.
+
 **`replay_session.py <session.csv>`** — feeds a recorded session back through the
 live `FlightRecorder` trigger logic and reports what would have fired. This is how
 the trigger changes were validated against real rides instead of only synthetic

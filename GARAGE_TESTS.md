@@ -20,7 +20,32 @@ In this mode nothing else is polled — no RPM, no DTCs, no MIL. The RPM gate on
 the throttle triggers disables itself when RPM is not being read, so detection
 works with the engine off and the ignition on.
 
-## Test 1 — baseline, engine off
+## Phase A — engine off (do all of this first)
+
+Ignition on, engine not running. Everything below works without starting the
+bike: the throttle triggers skip their RPM gate when RPM is not being polled.
+
+**First, confirm the ECU answers with the engine off.** Some ECUs drop the
+diagnostic session when not running. Start the recorder and check the throttle
+trace moves when you turn the grip. If it does not connect, or connects and then
+goes quiet, say so and we will work out whether it needs the engine running or
+just a re-init — this is the one unknown in the whole plan.
+
+After each sweep, run:
+
+```bash
+python tools/analysis/sweep_scan.py captures/session_<latest>.csv
+```
+
+It reports whether dropouts cluster at one throttle angle (a dead spot in the
+sensor track) or are spread across angles (wiring, connector or supply).
+
+For reference, running it on the 17 Sep ride gives **19 dropouts spread across 8
+throttle bands from 20% to 60%** — not clustered. That already argues against
+the sensor element and towards the circuit, and it is why I would not replace
+the sensor first.
+
+### Test 1 — baseline, engine off
 
 Ignition on, engine not running. Let it log for 60 s untouched.
 
@@ -29,7 +54,7 @@ Ignition on, engine not running. Let it log for 60 s untouched.
   engine load at all**, which points hard at the connector or the sensor rather
   than at harness movement.
 
-## Test 2 — slow full sweep, engine off
+### Test 2 — slow full sweep, engine off
 
 Open the throttle slowly to full and back, three times, over ~10 s each.
 
@@ -39,7 +64,7 @@ Open the throttle slowly to full and back, three times, over ~10 s each.
 - This is the test a bench resistance sweep already passed, so a clean result
   here is expected and does not clear the circuit.
 
-## Test 3 — hold and wiggle, engine off
+### Test 3 — hold and wiggle, engine off
 
 Hold the throttle steady at roughly 30% — the angle where most logged events
 occurred — and work through these one at a time, ~15 s each, leaving a pause
@@ -55,14 +80,16 @@ between so the log shows which action caused what:
 Whichever action produces a `TRIGGER_H` or `TRIGGER_I` is the location. Note the
 timestamp against the action.
 
-## Test 4 — engine running, heat soak
+## Phase B — engine running (only if Phase A finds nothing)
+
+### Test 4 — engine running, heat soak
 
 Engine at idle, warm it to operating temperature, hold ~30% throttle in neutral,
 repeat the Test 3 wiggles. Heat and vibration are both present now. If the fault
 only appears here and not in Test 3, it is temperature or vibration dependent,
 which favours a marginal crimp or a partially broken strand over a loose pin.
 
-## Test 5 — 5 V reference
+### Test 5 — 5 V reference
 
 This one needs a meter, because the ECU does not report the sensor supply (PID
 0x42 is absent, so there is no voltage visible over OBD at all).
