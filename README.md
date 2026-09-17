@@ -178,6 +178,57 @@ On trigger, files are saved in `./captures/`:
 
 ---
 
+## 5b. TuneECU Map Files and the Sagem Native Protocol
+
+### Map file encryption (solved)
+
+TuneECU stores exported ECU maps encrypted. `tuneecu_map.py` implements the
+algorithm, recovered by disassembling TuneECU.exe's `codecMap` method. It is a
+byte-wise CBC-style stream cipher over a 4-byte repeating keystream whose **key
+seed is the first four bytes of the file itself**, stored in clear -- so any map
+file decrypts without an external key.
+
+```bash
+python tuneecu_map.py "011123Map.hex" --out map.bin --tables
+```
+
+Verified on the exported Caponord map: decrypt then re-encrypt reproduces the
+original byte for byte, entropy drops from 7.96 to 6.95 bits/byte, and the map
+identifier recovered from the header ("011123") matches the exported filename.
+
+`find_tables()` locates calibration grids structurally, by looking for
+rectangular regions whose neighbouring cells vary smoothly. It deliberately does
+not label them: TuneECU resolves table addresses through a per-ECU catalogue
+(its `mType` / `eAddr` arrays), and for Sagem ECUs `CheckMapID` matches a map to
+a catalogue entry on only **two bits** of the map ID, so the exported file alone
+does not identify which table is which. The axis breakpoints TuneECU
+interpolates over are included as `DEF_REV` (32 rpm points, 800-12000),
+`DEF_THROTTLE` (16 points, tenths of a percent) and `DEF_TEMP`.
+
+### Sagem native diagnostics (partially mapped, unverified)
+
+`sagem_protocol.py` documents what was recovered of the Sagem-native protocol.
+**None of it has been confirmed against the bike** -- the identifiers and framing
+come from TuneECU's tables and code, but response layouts and scaling factors
+have not been traced.
+
+| Finding | Detail |
+|---|---|
+| Session | `SwitchMode(20)` = `MODE_SAGEM_CMD` before native requests |
+| Security | Service `0x27` sub-function `0x03`, 16-bit key; `Setkeys` derives it from a 64-bit seed |
+| Trim write | Service `0xA3` with a 4-byte block |
+| Live data | Sagem-native identifiers grouped under TuneECU's display labels |
+
+The reason this is worth pursuing: generic OBD Mode 01 reports **one** ignition
+advance figure for the whole engine, but the Sagem set appears to expose ignition
+timing and injection pulse width **per cylinder** (`0x004C`/`0x004D` and
+`0x0405`/`0x0406`). That would distinguish an ECU-wide decision to cut -- both
+cylinders retarding together, consistent with a throttle-input fault -- from a
+per-cylinder failure pointing back at coils or injectors. The current recorder
+cannot tell those apart.
+
+---
+
 ## 6. Interactive Web UI Dashboard
 
 The tool includes a built-in, touch-friendly, dark-mode **Web Dashboard** powered by FastAPI and WebSockets.
