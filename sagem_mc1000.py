@@ -157,6 +157,11 @@ class TelemetryFrame:
     tps_min_cycle: float = 0.0
     tps_max_cycle: float = 0.0
     tps_sample_count: int = 0
+    # The individual throttle readings taken across the cycle, in order. Triggers
+    # need the SHAPE, not just min/max: a rider moving the throttle produces a
+    # monotonic ramp, whereas a signal dropout produces an interior dip bracketed
+    # by open readings, which no throttle movement can imitate.
+    tps_samples: List[float] = field(default_factory=list)
 
     # --- Additional Mode 01 signals, populated only when the ECU supports them ---
     vehicle_speed_kph: float = 0.0
@@ -283,6 +288,7 @@ class TelemetryFrame:
             f"{self.tps_min_cycle:.2f}",
             f"{self.tps_max_cycle:.2f}",
             str(self.tps_sample_count),
+            ";".join("%.1f" % v for v in self.tps_samples),
             self._csv_num("vehicle_speed_kph", self.vehicle_speed_kph, "{:.1f}"),
             self._csv_num("gear_ratio", self.gear_ratio, "{:.1f}"),
             self._csv_num("throttle_b_pct", self.throttle_b_pct),
@@ -305,7 +311,8 @@ class TelemetryFrame:
         "air_temp_c", "crank_sync", "efi_light", "coil_1_fault", "coil_2_fault",
         "coil_3_fault", "coil_4_fault", "tip_over", "active_dtcs", "trigger_event",
         "raw_hex",
-        "tps_min_cycle", "tps_max_cycle", "tps_sample_count", "vehicle_speed_kph",
+        "tps_min_cycle", "tps_max_cycle", "tps_sample_count", "tps_samples",
+        "vehicle_speed_kph",
         "gear_ratio", "throttle_b_pct", "rel_throttle_pct", "o2_b1s1_volts",
         "fuel_trim_short_pct", "fuel_trim_long_pct", "fuel_system_status",
         "baro_kpa", "absolute_load_pct", "runtime_sec",
@@ -897,6 +904,7 @@ class TelemetrySampler:
             tps_min_cycle=min(tps_samples),
             tps_max_cycle=max(tps_samples),
             tps_sample_count=len(self._tps_cycle),
+            tps_samples=list(self._tps_cycle),
             vehicle_speed_kph=speed,
             throttle_b_pct=v.get("throttle_b_pct", 0.0),
             rel_throttle_pct=v.get("rel_throttle_pct", 0.0),
