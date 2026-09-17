@@ -788,3 +788,94 @@
 2026-09-17 16:41:27,386 [INFO] sagem.recorder: Captured flight recorder event saved: capture_20260917_164123_611_trigger_i_throttle_floor_hit.csv, capture_20260917_164123_611_trigger_i_throttle_floor_hit.json, capture_20260917_164123_611_trigger_i_throttle_floor_hit_report.txt
 2026-09-17 16:41:27,386 [INFO] sagem: Blackbox capture #1 saved: capture_20260917_164123_611_trigger_i_throttle_floor_hit.csv [TRIGGER_I_THROTTLE_FLOOR_HIT | RPM: 3559, TPS: 21.2% (min 3.5), Adv: 11.5°, EFI: OFF]
 2026-09-17 16:42:37,029 [INFO] sagem.serial: Closed K-Line serial port COM9
+2026-09-17 17:10:57,008 [WARNING] sagem: Could not auto-detect FTDI adapter. Available ports: ['COM7', 'COM5', 'COM8', 'COM11', 'COM10', 'COM4']
+2026-09-17 17:10:57,532 [INFO] sagem: Connecting to Sagem MC1000 on COM7 @ 10400 baud...
+2026-09-17 17:10:57,534 [INFO] sagem: Web dashboard active at http://localhost:8000
+2026-09-17 17:10:59,038 [INFO] sagem.web: WebSocket client connected (1 total)
+2026-09-17 17:11:00,431 [INFO] sagem.web: WebSocket client disconnected (0 remaining)
+2026-09-17 17:11:02,656 [ERROR] sagem: Connection failed: Failed to open port COM7: could not open port 'COM7': OSError(22, 'The semaphore timeout period has expired.', None, 121)
+2026-09-17 17:15:59,617 [INFO] sagem: Auto-detected FTDI K-Line adapter on port: COM9
+2026-09-17 17:16:00,053 [INFO] sagem: Connecting to Sagem MC1000 on COM9 @ 10400 baud...
+2026-09-17 17:16:00,055 [INFO] sagem: Web dashboard active at http://localhost:8000
+2026-09-17 17:16:00,061 [INFO] sagem.serial: Opened K-Line serial port COM9 at 10400 baud
+2026-09-17 17:16:00,061 [INFO] sagem.serial: Physical hardware on COM9: testing Caponord Sagem MC1000 Slow-Init (0x33)...
+2026-09-17 17:16:00,061 [INFO] sagem.serial: Attempting 5-Baud Slow-Init (target=0x33) on COM9...
+2026-09-17 17:16:01,459 [INFO] sagem.web: WebSocket client connected (1 total)
+2026-09-17 17:16:02,618 [INFO] sagem.serial: Slow-init: Received sync 0x55, KB1=0x08, KB2=0x08
+2026-09-17 17:16:03,734 [WARNING] sagem.serial: Slow-init: Expected ack 0xCC, got f7 (echo only -- ECU never answered)
+2026-09-17 17:16:03,734 [INFO] sagem.serial: Slow-init attempt 1 failed; retrying in 2s...
+2026-09-17 17:16:05,735 [INFO] sagem.serial: Attempting 5-Baud Slow-Init (target=0x33) on COM9...
+2026-09-17 17:16:09,090 [WARNING] sagem.serial: Slow-init: Expected sync byte 0x55 & key bytes, got None
+2026-09-17 17:16:09,090 [INFO] sagem.serial: Slow-init attempt 2 failed; retrying in 2s...
+2026-09-17 17:16:09,848 [INFO] sagem.web: WebSocket client disconnected (0 remaining)
+2026-09-17 17:16:11,090 [INFO] sagem.serial: Attempting 5-Baud Slow-Init (target=0x33) on COM9...
+2026-09-17 17:16:13,649 [INFO] sagem.serial: Slow-init: Received sync 0x55, KB1=0x08, KB2=0x08
+2026-09-17 17:16:13,729 [INFO] sagem.serial: 5-Baud Slow-Init handshake successful (ACK 0xCC)!
+2026-09-17 17:16:13,921 [INFO] sagem.serial: ECU reports 12 supported Mode 01 PIDs: 01 04 05 06 07 0C 0E 0F 11 1C 20 40
+2026-09-17 17:16:13,922 [INFO] sagem: Logging 8 signals: air_temp, coolant_temp, engine_load_pct, fuel_trim_long_pct, fuel_trim_short_pct, rpm, timing_advance_deg, tps
+2026-09-17 17:16:13,922 [WARNING] sagem: ECU does not support: map_kpa, vehicle_speed_kph, battery_volts, throttle_b_pct -- these will be logged as empty, not estimated
+2026-09-17 17:16:18,608 [INFO] sagem.web: WebSocket client connected (1 total)
+2026-09-17 17:19:46,963 [WARNING] sagem.recorder: >>> FLIGHT RECORDER TRIGGERED: TRIGGER_H_THROTTLE_DROPOUT - Throttle signal dipped to 6.7% mid-cycle while bracketed by 34.1% and 25.5%, with the previous cycle open throughout, at 6066 RPM. Samples: 34.1 11.4 6.7 25.5. No throttle movement or gearchange can produce this shape.
+2026-09-17 17:19:50,446 [INFO] sagem.recorder: Captured flight recorder event saved: capture_20260917_171946_477_trigger_h_throttle_dropout.csv, capture_20260917_171946_477_trigger_h_throttle_dropout.json, capture_20260917_171946_477_trigger_h_throttle_dropout_report.txt
+2026-09-17 17:19:50,448 [INFO] sagem: Blackbox capture #1 saved: capture_20260917_171946_477_trigger_h_throttle_dropout.csv [TRIGGER_H_THROTTLE_DROPOUT | RPM: 6066, TPS: 25.5% (min 6.7), Adv: 60.0°, EFI: OFF]
+2026-09-17 17:20:16,795 [WARNING] sagem.recorder: >>> FLIGHT RECORDER TRIGGERED: TRIGGER_H_THROTTLE_DROPOUT - Throttle signal dipped to 16.5% mid-cycle while bracketed by 45.1% and 37.6%, with the previous cycle open throughout, at 6237 RPM. Samples: 45.1 28.6 16.5 37.6. No throttle movement or gearchange can produce this shape.
+2026-09-17 17:20:19,703 [INFO] sagem.recorder: Captured flight recorder event saved: capture_20260917_172016_139_trigger_h_throttle_dropout.csv, capture_20260917_172016_139_trigger_h_throttle_dropout.json, capture_20260917_172016_139_trigger_h_throttle_dropout_report.txt
+2026-09-17 17:20:19,706 [INFO] sagem: Blackbox capture #2 saved: capture_20260917_172016_139_trigger_h_throttle_dropout.csv [TRIGGER_H_THROTTLE_DROPOUT | RPM: 6237, TPS: 37.6% (min 16.5), Adv: 60.0°, EFI: OFF]
+2026-09-17 17:22:31,936 [INFO] sagem.serial: Closed K-Line serial port COM9
+2026-09-17 17:22:36,317 [INFO] sagem: Auto-detected FTDI K-Line adapter on port: COM9
+2026-09-17 17:22:36,786 [INFO] sagem: Connecting to Sagem MC1000 on COM9 @ 10400 baud...
+2026-09-17 17:22:36,788 [INFO] sagem: Web dashboard active at http://localhost:8000
+2026-09-17 17:22:36,809 [INFO] sagem.serial: Opened K-Line serial port COM9 at 10400 baud
+2026-09-17 17:22:36,809 [INFO] sagem.serial: Physical hardware on COM9: testing Caponord Sagem MC1000 Slow-Init (0x33)...
+2026-09-17 17:22:36,809 [INFO] sagem.serial: Attempting 5-Baud Slow-Init (target=0x33) on COM9...
+2026-09-17 17:22:38,240 [INFO] sagem.web: WebSocket client connected (1 total)
+2026-09-17 17:22:39,352 [INFO] sagem.serial: Slow-init: Received sync 0x55, KB1=0x08, KB2=0x08
+2026-09-17 17:22:39,430 [INFO] sagem.serial: 5-Baud Slow-Init handshake successful (ACK 0xCC)!
+2026-09-17 17:22:39,623 [INFO] sagem.serial: ECU reports 12 supported Mode 01 PIDs: 01 04 05 06 07 0C 0E 0F 11 1C 20 40
+2026-09-17 17:22:39,623 [INFO] sagem: Logging 8 signals: air_temp, coolant_temp, engine_load_pct, fuel_trim_long_pct, fuel_trim_short_pct, rpm, timing_advance_deg, tps
+2026-09-17 17:22:39,623 [WARNING] sagem: ECU does not support: map_kpa, vehicle_speed_kph, battery_volts, throttle_b_pct -- these will be logged as empty, not estimated
+2026-09-17 17:22:40,312 [INFO] sagem.web: WebSocket client connected (2 total)
+2026-09-17 17:22:51,825 [INFO] sagem.serial: Closed K-Line serial port COM9
+2026-09-17 17:22:57,061 [INFO] sagem: Auto-detected FTDI K-Line adapter on port: COM9
+2026-09-17 17:22:57,560 [INFO] sagem: Connecting to Sagem MC1000 on COM9 @ 10400 baud...
+2026-09-17 17:22:57,562 [INFO] sagem: Web dashboard active at http://localhost:8000
+2026-09-17 17:22:57,578 [INFO] sagem.serial: Opened K-Line serial port COM9 at 10400 baud
+2026-09-17 17:22:57,578 [INFO] sagem.serial: Physical hardware on COM9: testing Caponord Sagem MC1000 Slow-Init (0x33)...
+2026-09-17 17:22:57,578 [INFO] sagem.serial: Attempting 5-Baud Slow-Init (target=0x33) on COM9...
+2026-09-17 17:22:57,628 [INFO] sagem.web: WebSocket client connected (1 total)
+2026-09-17 17:22:59,033 [INFO] sagem.web: WebSocket client connected (2 total)
+2026-09-17 17:22:59,265 [INFO] sagem.web: WebSocket client connected (3 total)
+2026-09-17 17:23:00,120 [INFO] sagem.serial: Slow-init: Received sync 0x55, KB1=0x08, KB2=0x08
+2026-09-17 17:23:00,199 [INFO] sagem.serial: 5-Baud Slow-Init handshake successful (ACK 0xCC)!
+2026-09-17 17:23:00,391 [INFO] sagem.serial: ECU reports 12 supported Mode 01 PIDs: 01 04 05 06 07 0C 0E 0F 11 1C 20 40
+2026-09-17 17:23:00,392 [INFO] sagem: Logging 8 signals: air_temp, coolant_temp, engine_load_pct, fuel_trim_long_pct, fuel_trim_short_pct, rpm, timing_advance_deg, tps
+2026-09-17 17:23:00,392 [WARNING] sagem: ECU does not support: map_kpa, vehicle_speed_kph, battery_volts, throttle_b_pct -- these will be logged as empty, not estimated
+2026-09-17 17:23:00,573 [INFO] sagem.web: WebSocket client disconnected (2 remaining)
+2026-09-17 17:23:00,958 [INFO] sagem.web: WebSocket client disconnected (1 remaining)
+2026-09-17 17:23:38,879 [WARNING] sagem.recorder: >>> FLIGHT RECORDER TRIGGERED: TRIGGER_G_ROLL_ON_BOG - Roll-on bog: Throttle opened +4.3% (to 8.2%), but RPM dropped from 3093 to 3005 (-88 RPM)
+2026-09-17 17:23:42,171 [INFO] sagem.recorder: Captured flight recorder event saved: capture_20260917_172338_542_trigger_g_roll_on_bog.csv, capture_20260917_172338_542_trigger_g_roll_on_bog.json, capture_20260917_172338_542_trigger_g_roll_on_bog_report.txt
+2026-09-17 17:23:42,174 [INFO] sagem: Blackbox capture #1 saved: capture_20260917_172338_542_trigger_g_roll_on_bog.csv [TRIGGER_G_ROLL_ON_BOG | RPM: 3005, TPS: 8.2% (min 7.5), Adv: 18.5°, EFI: OFF]
+2026-09-17 17:23:52,123 [WARNING] sagem.recorder: >>> FLIGHT RECORDER TRIGGERED: TRIGGER_G_ROLL_ON_BOG - Roll-on bog: Throttle opened +10.2% (to 13.7%), but RPM dropped from 4242 to 3232 (-1010 RPM)
+2026-09-17 17:23:55,422 [INFO] sagem.recorder: Captured flight recorder event saved: capture_20260917_172351_792_trigger_g_roll_on_bog.csv, capture_20260917_172351_792_trigger_g_roll_on_bog.json, capture_20260917_172351_792_trigger_g_roll_on_bog_report.txt
+2026-09-17 17:23:55,425 [INFO] sagem: Blackbox capture #2 saved: capture_20260917_172351_792_trigger_g_roll_on_bog.csv [TRIGGER_G_ROLL_ON_BOG | RPM: 3232, TPS: 13.7% (min 7.8), Adv: 9.0°, EFI: OFF]
+2026-09-17 17:24:52,740 [WARNING] sagem.recorder: >>> FLIGHT RECORDER TRIGGERED: TRIGGER_G_ROLL_ON_BOG - Roll-on bog: Throttle opened +7.8% (to 11.4%), but RPM dropped from 3656 to 2589 (-1067 RPM)
+2026-09-17 17:24:56,119 [INFO] sagem.recorder: Captured flight recorder event saved: capture_20260917_172452_415_trigger_g_roll_on_bog.csv, capture_20260917_172452_415_trigger_g_roll_on_bog.json, capture_20260917_172452_415_trigger_g_roll_on_bog_report.txt
+2026-09-17 17:24:56,123 [INFO] sagem: Blackbox capture #3 saved: capture_20260917_172452_415_trigger_g_roll_on_bog.csv [TRIGGER_G_ROLL_ON_BOG | RPM: 2589, TPS: 11.4% (min 11.4), Adv: 13.5°, EFI: OFF]
+2026-09-17 17:25:07,623 [WARNING] sagem.recorder: >>> FLIGHT RECORDER TRIGGERED: TRIGGER_G_ROLL_ON_BOG - Roll-on bog: Throttle opened +6.7% (to 10.2%), but RPM dropped from 5183 to 3765 (-1418 RPM)
+2026-09-17 17:25:10,973 [INFO] sagem.recorder: Captured flight recorder event saved: capture_20260917_172507_294_trigger_g_roll_on_bog.csv, capture_20260917_172507_294_trigger_g_roll_on_bog.json, capture_20260917_172507_294_trigger_g_roll_on_bog_report.txt
+2026-09-17 17:25:10,976 [INFO] sagem: Blackbox capture #4 saved: capture_20260917_172507_294_trigger_g_roll_on_bog.csv [TRIGGER_G_ROLL_ON_BOG | RPM: 3765, TPS: 10.2% (min 8.2), Adv: 14.0°, EFI: OFF]
+2026-09-17 17:25:18,069 [WARNING] sagem.recorder: >>> FLIGHT RECORDER TRIGGERED: TRIGGER_G_ROLL_ON_BOG - Roll-on bog: Throttle opened +18.4% (to 22.0%), but RPM dropped from 5231 to 4625 (-606 RPM)
+2026-09-17 17:25:21,084 [INFO] sagem.recorder: Captured flight recorder event saved: capture_20260917_172517_667_trigger_g_roll_on_bog.csv, capture_20260917_172517_667_trigger_g_roll_on_bog.json, capture_20260917_172517_667_trigger_g_roll_on_bog_report.txt
+2026-09-17 17:25:21,086 [INFO] sagem: Blackbox capture #5 saved: capture_20260917_172517_667_trigger_g_roll_on_bog.csv [TRIGGER_G_ROLL_ON_BOG | RPM: 4625, TPS: 22.0% (min 19.6), Adv: 28.0°, EFI: OFF]
+2026-09-17 17:26:10,551 [WARNING] sagem.recorder: >>> FLIGHT RECORDER TRIGGERED: TRIGGER_G_ROLL_ON_BOG - Roll-on bog: Throttle opened +9.8% (to 13.3%), but RPM dropped from 4596 to 4374 (-222 RPM)
+2026-09-17 17:26:13,678 [INFO] sagem.recorder: Captured flight recorder event saved: capture_20260917_172610_178_trigger_g_roll_on_bog.csv, capture_20260917_172610_178_trigger_g_roll_on_bog.json, capture_20260917_172610_178_trigger_g_roll_on_bog_report.txt
+2026-09-17 17:26:13,680 [INFO] sagem: Blackbox capture #6 saved: capture_20260917_172610_178_trigger_g_roll_on_bog.csv [TRIGGER_G_ROLL_ON_BOG | RPM: 4374, TPS: 13.3% (min 5.5), Adv: 23.0°, EFI: OFF]
+2026-09-17 17:27:12,159 [WARNING] sagem.recorder: >>> FLIGHT RECORDER TRIGGERED: TRIGGER_G_ROLL_ON_BOG - Roll-on bog: Throttle opened +9.8% (to 13.3%), but RPM dropped from 2920 to 2524 (-396 RPM)
+2026-09-17 17:27:15,198 [INFO] sagem.recorder: Captured flight recorder event saved: capture_20260917_172711_790_trigger_g_roll_on_bog.csv, capture_20260917_172711_790_trigger_g_roll_on_bog.json, capture_20260917_172711_790_trigger_g_roll_on_bog_report.txt
+2026-09-17 17:27:15,201 [INFO] sagem: Blackbox capture #7 saved: capture_20260917_172711_790_trigger_g_roll_on_bog.csv [TRIGGER_G_ROLL_ON_BOG | RPM: 2524, TPS: 13.3% (min 10.6), Adv: 8.5°, EFI: OFF]
+2026-09-17 17:30:36,058 [INFO] sagem.serial: Closed K-Line serial port COM9
+2026-09-17 17:43:49,684 [INFO] sagem: Connecting to Sagem MC1000 on MOCK_ECU @ 10400 baud...
+2026-09-17 17:43:49,684 [INFO] sagem.serial: Initiating ISO 14230 Fast-Init on COM3...
+2026-09-17 17:43:49,736 [INFO] sagem.serial: Fast-Init successful! ECU Key Bytes: ea8f
+2026-09-17 17:43:53,193 [WARNING] sagem.recorder: >>> FLIGHT RECORDER TRIGGERED: TRIGGER_E_EFI_LIGHT_ON - Sagem MC1000 commanded EFI warning light ON (MIL active) at 4078 RPM, TPS 28.2%
+2026-09-17 17:43:54,754 [INFO] sagem.serial: Closed K-Line serial port COM3

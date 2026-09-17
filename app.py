@@ -397,18 +397,31 @@ class SagemDiagnosticsApp:
         if getattr(self.args, "focus", None):
             return []
 
-        if self.total_frames % 2 == 0:
-            return [(0x01, 0x01, 10)]
+        # MIL status EVERY cycle, not every other one.
+        #
+        # The rider reports the EFI warning lamp lighting during the events, yet
+        # no log has ever captured the MIL bit set. At the old one-in-two rate,
+        # roughly 1 Hz, a lamp flash of a few hundred milliseconds falls between
+        # samples. Since the lamp is the ECU telling us directly that it has
+        # detected something, missing it throws away the most valuable signal
+        # available. It is one extra query per cycle.
+        queries = [(0x01, 0x01, 10)]
 
+        # Then one rotating slot: stored DTCs, pending DTCs, or a slow PID.
+        # Mode 03 (stored) was previously never polled at all -- only Mode 07
+        # (pending) was. A fault the ECU latches would therefore never appear.
         rotation = list(self._slow_pid_rotation)
-        if not rotation:
-            return [(0x07, None, 12)]
-        idx = (self.total_frames // 2) % (len(rotation) + 1)
-        if idx == len(rotation):
-            return [(0x07, None, 12)]  # Mode 07 pending DTCs
-        pid = rotation[idx]
-        nbytes = OBD_PIDS[pid][1] if pid in OBD_PIDS else 1
-        return [(0x01, pid, 5 + nbytes + 1)]
+        slots = rotation + [("dtc_stored",), ("dtc_pending",)]
+        slot = slots[self.total_frames % len(slots)]
+        if slot == ("dtc_stored",):
+            queries.append((0x03, None, 12))
+        elif slot == ("dtc_pending",):
+            queries.append((0x07, None, 12))
+        else:
+            pid = slot
+            nbytes = OBD_PIDS[pid][1] if pid in OBD_PIDS else 1
+            queries.append((0x01, pid, 5 + nbytes + 1))
+        return queries
 
     def _run_poll_cycle(self, now_ts: float) -> None:
         """Execute one interleaved ISO 9141 poll cycle and publish the frame."""
@@ -417,10 +430,14 @@ class SagemDiagnosticsApp:
             resp = self.bus.query_iso9141(mode=mode, pid=pid, expected_len=exp_len, timeout=0.06)
             if not resp:
                 continue
-            if mode == 0x07:
+            if mode in (0x03, 0x07):
                 self.sampler.ingest_dtcs(resp)
             elif pid == 0x01:
                 self.sampler.ingest_mil(resp)
+                # Keep the raw MIL frame whenever the lamp bit is set, so an EFI
+                # light event is provable from the log rather than inferred.
+                if len(resp) >= 6 and resp[5] & 0x80:
+                    raw_parts.append(f"MIL_ON:{resp.hex()}")
             else:
                 name = self.sampler.ingest(resp)
                 if name in ("rpm", "tps", "timing_advance_deg"):
