@@ -184,6 +184,19 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--poll",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated signals to poll at maximum rate, nothing else. "
+            "Names from the PID table (tps,rpm,timing_advance_deg,coolant_temp,"
+            "air_temp,engine_load_pct). Use tps,coolant_temp,air_temp to test "
+            "whether a throttle dip is accompanied by movement on other "
+            "5V-referenced sensors, which separates a shared supply or ground "
+            "fault from a fault in the throttle circuit alone."
+        ),
+    )
+    parser.add_argument(
         "--no-pid-discovery",
         action="store_true",
         help="Skip the Mode 01 PID support scan at connect and poll the legacy fixed set",
@@ -379,6 +392,18 @@ class SagemDiagnosticsApp:
         include PIDs the ECU actually advertised at connect time, so no budget is
         wasted on PIDs that will never answer.
         """
+        poll = getattr(self.args, "poll", None)
+        if poll:
+            by_name = {v[0]: (pid, v[1]) for pid, v in OBD_PIDS.items()}
+            out = []
+            for name in [x.strip() for x in poll.split(",") if x.strip()]:
+                if name not in by_name:
+                    raise SystemExit("unknown signal %r; known: %s"
+                                     % (name, ", ".join(sorted(by_name))))
+                pid, nbytes = by_name[name]
+                out.append((0x01, pid, 5 + nbytes + 1))
+            return out
+
         if getattr(self.args, "fast", False):
             # Everything that matters, every cycle, nothing else. The K-line
             # allows roughly 14.7 queries per second total (~68ms each, set by
@@ -412,7 +437,7 @@ class SagemDiagnosticsApp:
         lamp flash is seen within ~300ms), otherwise the next supported PID or
         the DTC sweep.
         """
-        if getattr(self.args, "focus", None):
+        if getattr(self.args, "focus", None) or getattr(self.args, "poll", None):
             return []
 
         if getattr(self.args, "fast", False):
