@@ -2,9 +2,17 @@
 Aprilia Caponord ETV 1000 (Sagem MC1000 ECU) Diagnostics & Flight Recorder CLI.
 
 Connects to Sagem MC1000 over FTDI FT232RL KKL 409.1 cable (K-Line ISO 14230).
-Continuously polls Service 0x18 (Faults) & Service 0x21 (Telemetry) at high Hz,
-detects transient / unlatched glitches (coils, crank sync loss, brownout voltage dips),
-and captures 50-frame blackbox snapshots to ./captures/ with automated root-cause diagnosis.
+
+On the ISO 9141 path the ECU is asked which Mode 01 PIDs it supports and only
+those are polled; signals it does not support are logged as empty rather than
+back-filled from a physical model, so a missing sensor can never masquerade as
+a healthy reading. Throttle position is sampled several times per poll cycle
+(--tps-oversample) because the fault this tool exists to find is a
+sub-cycle throttle-signal dropout.
+
+Detects transient glitches (phantom closed throttle, TPS dropouts, coil faults,
+crank sync loss, brownouts) and captures blackbox snapshots to ./captures/
+with automated root-cause diagnosis.
 """
 
 import argparse
@@ -17,7 +25,7 @@ import platform
 import sys
 import threading
 import time
-from typing import Optional
+from typing import List, Optional
 import webbrowser
 
 from rich.console import Console
@@ -38,7 +46,9 @@ from sagem_mc1000 import (
     build_tester_present,
     parse_read_dtc_response,
     parse_telemetry_response,
-    parse_iso9141_telemetry,
+    OBD_PIDS,
+    PROBE_CANDIDATE_PIDS,
+    TelemetrySampler,
 )
 from serial_bus import (
     KLineSerialBus,
@@ -145,6 +155,20 @@ def parse_args() -> argparse.Namespace:
         help="Exit automatically after running for this many seconds",
     )
     parser.add_argument(
+        "--tps-oversample",
+        type=int,
+        default=2,
+        help=(
+            "How many times to sample throttle position per poll cycle (default 2). "
+            "Higher values catch shorter TPS dropouts at the cost of cycle rate."
+        ),
+    )
+    parser.add_argument(
+        "--no-pid-discovery",
+        action="store_true",
+        help="Skip the Mode 01 PID support scan at connect and poll the legacy fixed set",
+    )
+    parser.add_argument(
         "-v", "--verbose",
         action="store_true",
         help="Enable detailed debug logging to sagem_diag.log",
@@ -222,13 +246,10 @@ class SagemDiagnosticsApp:
         self.last_frame: Optional[TelemetryFrame] = None
         self.running = True
         self.last_heartbeat_time = time.time()
-        self._cached_ect = None
-        self._cached_iat = None
-        self._cached_load = None
-        self._cached_map = None
-        self._cached_volt = None
-        self._cached_mil = None
-        self._cached_dtc = None
+        # Signal accumulator for the ISO 9141 path. Populated with the ECU's
+        # advertised PID list once the connection is established.
+        self.sampler = TelemetrySampler()
+        self._slow_pid_rotation: List[int] = []
 
     def _start_web_server(self) -> None:
         """Start FastAPI/Uvicorn server in a dedicated background daemon thread."""
@@ -273,11 +294,150 @@ class SagemDiagnosticsApp:
         try:
             self.bus.open()
             if self.args.force_slow_init:
-                return self.bus.slow_init_5baud()
-            return self.bus.initialize()
+                ok = self.bus.slow_init_5baud()
+            else:
+                ok = self.bus.initialize()
+            if ok:
+                self._discover_signals()
+            return ok
         except Exception as e:
             self.logger.error("Connection failed: %s", e)
             return False
+
+    def _discover_signals(self) -> None:
+        """
+        Ask the ECU which Mode 01 PIDs it supports and configure the sampler from
+        the answer, rather than assuming a fixed list. Signals the ECU does not
+        support are recorded as unsupported and left empty in the logs instead of
+        being back-filled with modelled values.
+        """
+        if self.bus.protocol != "ISO9141":
+            return
+
+        supported: set = set()
+        if not self.args.no_pid_discovery:
+            try:
+                supported = self.bus.discover_supported_pids()
+                if not supported:
+                    supported = self.bus.probe_pids_individually(PROBE_CANDIDATE_PIDS)
+            except Exception as e:
+                self.logger.warning("PID discovery failed (%s); falling back to legacy PID set", e)
+
+        if not supported:
+            # Legacy fixed set: what the recorder polled before discovery existed.
+            supported = {0x04, 0x05, 0x0B, 0x0C, 0x0E, 0x0F, 0x11, 0x42}
+
+        self.sampler = TelemetrySampler(supported_pids=supported)
+        self.sampler.note_unsupported()
+
+        # High-rate PIDs have dedicated slots; everything else shares the slow slot.
+        self._slow_pid_rotation = sorted(
+            p for p in supported if p in OBD_PIDS and p not in (0x0C, 0x0E, 0x11)
+        )
+        self.logger.info(
+            "Logging %d signals: %s",
+            len(self.sampler.supported_signals),
+            ", ".join(self.sampler.supported_signals),
+        )
+        missing = [
+            OBD_PIDS[p][0] for p in (0x0B, 0x0D, 0x42, 0x47)
+            if p in OBD_PIDS and p not in supported
+        ]
+        if missing:
+            self.logger.warning(
+                "ECU does not support: %s -- these will be logged as empty, not estimated",
+                ", ".join(missing),
+            )
+
+    def _build_poll_schedule(self) -> List[tuple]:
+        """
+        Build the per-cycle query schedule as a list of (mode, pid, expected_len).
+
+        TPS (PID 11) appears --tps-oversample times per cycle, spread between the
+        other high-rate signals, so the throttle trace is sampled several times
+        faster than the cycle rate. Slow signals share one rotating slot and only
+        include PIDs the ECU actually advertised at connect time, so no budget is
+        wasted on PIDs that will never answer.
+        """
+        oversample = max(1, int(getattr(self.args, "tps_oversample", 2)))
+        high = [(0x01, 0x0C, 8), (0x01, 0x0E, 7)]  # RPM, ignition advance
+        schedule: List[tuple] = []
+        for i in range(oversample):
+            schedule.append((0x01, 0x11, 7))  # TPS
+            if i < len(high):
+                schedule.append(high[i])
+        for item in high[oversample:]:
+            schedule.append(item)
+        return schedule
+
+    def _slow_slot_queries(self) -> List[tuple]:
+        """
+        One rotating slow query per cycle: MIL status on even cycles (so an EFI
+        lamp flash is seen within ~300ms), otherwise the next supported PID or
+        the DTC sweep.
+        """
+        if self.total_frames % 2 == 0:
+            return [(0x01, 0x01, 10)]
+
+        rotation = list(self._slow_pid_rotation)
+        if not rotation:
+            return [(0x07, None, 12)]
+        idx = (self.total_frames // 2) % (len(rotation) + 1)
+        if idx == len(rotation):
+            return [(0x07, None, 12)]  # Mode 07 pending DTCs
+        pid = rotation[idx]
+        nbytes = OBD_PIDS[pid][1] if pid in OBD_PIDS else 1
+        return [(0x01, pid, 5 + nbytes + 1)]
+
+    def _run_poll_cycle(self, now_ts: float) -> None:
+        """Execute one interleaved ISO 9141 poll cycle and publish the frame."""
+        raw_parts: List[str] = []
+        for mode, pid, exp_len in self._build_poll_schedule() + self._slow_slot_queries():
+            resp = self.bus.query_iso9141(mode=mode, pid=pid, expected_len=exp_len, timeout=0.06)
+            if not resp:
+                continue
+            if mode == 0x07:
+                self.sampler.ingest_dtcs(resp)
+            elif pid == 0x01:
+                self.sampler.ingest_mil(resp)
+            else:
+                name = self.sampler.ingest(resp)
+                if name in ("rpm", "tps", "timing_advance_deg"):
+                    raw_parts.append(f"{name}:{resp.hex()}")
+
+        frame = self.sampler.build_frame(timestamp=now_ts, raw_hex=" ".join(raw_parts))
+        self.sampler.end_cycle()
+        self._publish_frame(frame, now_ts)
+
+    def _publish_frame(self, frame: TelemetryFrame, now_ts: float) -> None:
+        """Feed a frame to the recorder, log any capture, and broadcast to the dashboard."""
+        self.last_frame = frame
+        self.total_frames += 1
+        self.last_heartbeat_time = now_ts
+
+        event = self.recorder.feed_frame(frame)
+        if event:
+            self.logger.info(
+                "Blackbox capture #%d saved: %s [%s | RPM: %.0f, TPS: %.1f%% (min %.1f), Adv: %.1f°, EFI: %s]",
+                len(self.recorder.captured_events),
+                Path(event.csv_path).name,
+                event.trigger_type,
+                event.trigger_frame.rpm,
+                event.trigger_frame.tps,
+                event.trigger_frame.tps_min_cycle,
+                event.trigger_frame.timing_advance_deg,
+                "ON" if event.trigger_frame.efi_light_on else "OFF",
+            )
+
+        if self.args.web and self.web_state and self._web_loop and self._web_loop.is_running():
+            self.web_state.total_frames = self.total_frames
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    self.web_state.broadcast_frame(frame, self.loop_hz, self.bus.is_connected),
+                    self._web_loop,
+                )
+            except Exception:
+                pass
 
     def poll_cycle(self) -> Optional[TelemetryFrame]:
         """
@@ -290,78 +450,14 @@ class SagemDiagnosticsApp:
         frame: Optional[TelemetryFrame] = None
 
         if self.bus.protocol == "ISO9141":
+            # Interleaved schedule. TPS is queried twice per cycle, between the
+            # other signals, because the fault being chased is a throttle-signal
+            # dropout shorter than a single cycle -- at the old one-sample-per-cycle
+            # rate it was only caught when it happened to straddle the sample.
+            # A frame is emitted per cycle carrying min/max of all TPS samples.
             try:
-                # 1. High-speed RPM query (PID 0C)
-                resp_rpm = self.bus.query_iso9141(mode=0x01, pid=0x0C, expected_len=8, timeout=0.06)
-                # 2. High-speed TPS query (PID 11)
-                resp_tps = self.bus.query_iso9141(mode=0x01, pid=0x11, expected_len=7, timeout=0.06)
-                # 3. High-speed Ignition Timing Advance query (PID 0E)
-                resp_adv = self.bus.query_iso9141(mode=0x01, pid=0x0E, expected_len=7, timeout=0.06)
-
-                # 4. Staggered secondary sensor queries
-                # Prioritize EFI Warning Light / MIL status (PID 01) on every EVEN cycle (~6 Hz sample rate)
-                # so transient EFI flashes during hesitation are captured within ~150ms!
-                if self.total_frames % 2 == 0:
-                    self._cached_mil = self.bus.query_iso9141(mode=0x01, pid=0x01, expected_len=10, timeout=0.05)
-                else:
-                    slot = (self.total_frames // 2) % 6
-                    if slot == 0:
-                        self._cached_ect = self.bus.query_iso9141(mode=0x01, pid=0x05, expected_len=7, timeout=0.05)
-                    elif slot == 1:
-                        self._cached_load = self.bus.query_iso9141(mode=0x01, pid=0x04, expected_len=7, timeout=0.05)
-                    elif slot == 2:
-                        self._cached_map = self.bus.query_iso9141(mode=0x01, pid=0x0B, expected_len=7, timeout=0.05)
-                    elif slot == 3:
-                        self._cached_iat = self.bus.query_iso9141(mode=0x01, pid=0x0F, expected_len=7, timeout=0.05)
-                    elif slot == 4:
-                        self._cached_volt = self.bus.query_iso9141(mode=0x01, pid=0x42, expected_len=8, timeout=0.05)
-                    elif slot == 5:
-                        self._cached_dtc = self.bus.query_iso9141(mode=0x07, expected_len=12, timeout=0.06)
-
-                frame = parse_iso9141_telemetry(
-                    rpm_resp=resp_rpm,
-                    tps_resp=resp_tps,
-                    timing_resp=resp_adv,
-                    load_resp=self._cached_load,
-                    map_resp=self._cached_map,
-                    ect_resp=self._cached_ect,
-                    iat_resp=self._cached_iat,
-                    volt_resp=self._cached_volt,
-                    mil_resp=self._cached_mil,
-                    dtc_resp=self._cached_dtc,
-                    last_known_frame=self.last_frame,
-                    timestamp=now_ts,
-                )
-                self.last_frame = frame
-                self.total_frames += 1
-                self.last_heartbeat_time = now_ts
-
-                # Feed to flight recorder
-                event = self.recorder.feed_frame(frame)
-                if event:
-                    self.logger.info(
-                        "Blackbox capture #%d saved: %s [%s | RPM: %.0f, TPS: %.1f%%, Adv: %.1f°, Dwell: %.2fms, EFI: %s]",
-                        len(self.recorder.captured_events),
-                        Path(event.csv_path).name,
-                        event.trigger_type,
-                        event.trigger_frame.rpm,
-                        event.trigger_frame.tps,
-                        event.trigger_frame.timing_advance_deg,
-                        event.trigger_frame.coil_dwell_ms,
-                        "ON" if event.trigger_frame.efi_light_on else "OFF",
-                    )
-
-                # Broadcast to web dashboard clients
-                if self.args.web and self.web_state and self._web_loop and self._web_loop.is_running():
-                    self.web_state.total_frames = self.total_frames
-                    try:
-                        asyncio.run_coroutine_threadsafe(
-                            self.web_state.broadcast_frame(frame, self.loop_hz, self.bus.is_connected),
-                            self._web_loop,
-                        )
-                    except Exception:
-                        pass
-
+                self._run_poll_cycle(now_ts)
+                frame = self.last_frame
             except Exception as e:
                 self.logger.debug("ISO 9141 poll error: %s", e)
 

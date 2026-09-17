@@ -2,12 +2,27 @@
 Flight Recorder & Real-Time Anomaly Detection Engine for Sagem MC1000.
 
 Blackbox Engine Features:
-- Rolling circular buffer (deque maxlen=50, ~5 seconds at ~10 Hz).
-- Multi-channel transient anomaly detection:
-    Trigger A: Any active DTC or non-zero error bitmask (coils, sync loss, tip-over).
-    Trigger B: Sudden RPM collapse (> 1500 RPM drop in < 200ms while TPS > 2%).
-    Trigger C: Transient low battery voltage dip (< 11.2V).
-- Pre-trigger (3s) + Post-trigger (2s) event capture window.
+- Rolling circular buffer of recent telemetry frames.
+- Multi-channel transient anomaly detection. Triggers, in priority order:
+    Trigger H: Phantom closed throttle -- ECU runs its overrun ignition map
+               (advance >= 50 deg BTDC) while TPS still reads open. The highest
+               confidence signature of the intermittent cut, because an upshift
+               or a rider throttle blip cannot produce it.
+    Trigger I: Throttle signal dropout -- TPS collapses and recovers within a
+               single poll cycle, faster than any real throttle movement.
+    Trigger J: Throttle sensor A/B disagreement (bikes with a second sensor).
+    Trigger D: Steady throttle with RPM loss (cruising stutter).
+    Trigger F: High-load power cut.
+    Trigger G: Roll-on bog / timing collapse on throttle opening.
+    Trigger E: EFI warning lamp (MIL) rising edge.
+    Trigger A: Any active DTC or fault bitmask (coils, sync loss, tip-over).
+    Trigger B: Sudden RPM collapse.
+    Trigger C: Transient low battery voltage dip, only when voltage is measured.
+  Triggers B/F/G are suppressed when road speed shows the RPM drop was a
+  gearchange; without road speed that guard stays inert.
+- Pre- and post-trigger capture windows are defined in SECONDS, not frame counts,
+  because the ISO 9141 poll rate (~3 Hz) is a third of what the original frame
+  counts assumed.
 - Immediate serialization to timestamped CSV and JSON logs in ./captures/.
 - Automated diagnostic diagnosis summary generator with root-cause analysis.
 """
@@ -54,6 +69,8 @@ class FlightRecorder:
         pre_trigger_frames: int = 250,
         post_trigger_frames: int = 50,
         cooldown_sec: float = 3.5,
+        pre_trigger_sec: float = 8.0,
+        post_trigger_sec: float = 3.0,
     ):
         self.captures_dir = Path(captures_dir)
         self.captures_dir.mkdir(parents=True, exist_ok=True)
@@ -61,6 +78,14 @@ class FlightRecorder:
         self.pre_trigger_count = pre_trigger_frames
         self.post_trigger_count = post_trigger_frames
         self.cooldown_sec = cooldown_sec
+        # Capture windows are defined in seconds, not frames. The frame counts
+        # above assumed ~10 Hz polling, but the ISO 9141 path actually runs near
+        # 3 Hz, which turned a nominal "2 second" post-trigger window into ~17
+        # seconds of blindness -- long enough to swallow the follow-up events
+        # that matter most, since this fault repeats in bursts. Frame counts are
+        # kept only as an upper bound on file size.
+        self.pre_trigger_sec = pre_trigger_sec
+        self.post_trigger_sec = post_trigger_sec
 
         # Rolling circular buffer
         self.buffer: Deque[TelemetryFrame] = deque(maxlen=self.buffer_size)
@@ -89,34 +114,7 @@ class FlightRecorder:
     def _init_session_csv(self) -> None:
         """Initialize continuous full-ride session telemetry CSV file."""
         with open(self.session_csv_path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow([
-                "timestamp",
-                "elapsed_sec",
-                "rpm",
-                "drpm_dt",
-                "tps_pct",
-                "dtps_dt",
-                "timing_advance_deg",
-                "coil_dwell_ms",
-                "engine_load_pct",
-                "map_kpa",
-                "injection_time_ms",
-                "battery_volts",
-                "dvolts_dt",
-                "coolant_temp_c",
-                "air_temp_c",
-                "crank_sync",
-                "efi_light",
-                "coil_1_fault",
-                "coil_2_fault",
-                "coil_3_fault",
-                "coil_4_fault",
-                "tip_over",
-                "active_dtcs",
-                "trigger_event",
-                "raw_hex",
-            ])
+            csv.writer(f).writerow(TelemetryFrame.CSV_HEADER)
 
     @property
     def is_armed(self) -> bool:
@@ -151,7 +149,11 @@ class FlightRecorder:
             self.pending_post_frames.append(frame)
             self.buffer.append(frame)
 
-            if len(self.pending_post_frames) >= self.post_trigger_count:
+            post_elapsed = now - (self.active_trigger_frame.timestamp if self.active_trigger_frame else now)
+            if (
+                post_elapsed >= self.post_trigger_sec
+                or len(self.pending_post_frames) >= self.post_trigger_count
+            ):
                 # Finished post-trigger collection! Finalize and serialize
                 event_to_return = self._finalize_capture()
                 self.is_capturing = False
@@ -183,7 +185,10 @@ class FlightRecorder:
                     trig_marker = f">>> {trigger_type}"
 
                     # Freeze pre-trigger history (up to pre_trigger_count frames from circular buffer)
-                    history = list(self.buffer)
+                    history = [
+                        f for f in self.buffer
+                        if now - f.timestamp <= self.pre_trigger_sec
+                    ]
                     self.pending_pre_frames = history[-self.pre_trigger_count :]
                     self.pending_post_frames = []
 
@@ -212,6 +217,26 @@ class FlightRecorder:
         self.pending_pre_frames = list(self.buffer)[-self.pre_trigger_count :]
         self.pending_post_frames = []
 
+    def _looks_like_upshift(self, frame: TelemetryFrame) -> bool:
+        """
+        True when an RPM drop is explained by a gearchange rather than a power cut.
+
+        A gearchange steps rpm/road-speed down to the next ratio while road speed
+        keeps rising; a genuine cut leaves the ratio flat because the wheels and
+        engine stay coupled. This needs vehicle speed, so it only returns True on
+        ECUs that report it -- otherwise RPM-drop triggers stay as sensitive as
+        they were, at the cost of the occasional upshift false positive.
+        """
+        if not frame.has_optional("gear_ratio") or frame.gear_ratio <= 0:
+            return False
+        prev = self.prev_frame
+        if prev is None or not prev.has_optional("gear_ratio") or prev.gear_ratio <= 0:
+            return False
+        if frame.vehicle_speed_kph < prev.vehicle_speed_kph - 1.0:
+            return False  # slowing down: not an upshift
+        # A real upshift drops the ratio by a meaningful step (>8%).
+        return frame.gear_ratio <= prev.gear_ratio * 0.92
+
     def _check_triggers(self, frame: TelemetryFrame) -> Optional[Tuple[str, str]]:
         """
         Evaluate Trigger Rules:
@@ -219,6 +244,58 @@ class FlightRecorder:
         - Trigger B: Sudden RPM collapse (RPM drops > 1500 RPM in < 200ms while TPS > 2%).
         - Trigger C: Transient low voltage dip (< 11.2V).
         """
+        # --- Trigger H: Phantom Closed Throttle (highest-confidence signature) ---
+        # The ECU switches to its closed-throttle / overrun ignition map (advance
+        # snaps to ~60 deg BTDC) while the throttle is demonstrably still open.
+        # This cannot be an upshift or a rider throttle blip: the ECU's own TPS
+        # reading says the throttle is open in the same frame. It means the ECU
+        # briefly believed the throttle slammed shut, cut fuel, and the engine
+        # lost drive. Everything downstream (RPM collapse, roll-on bog) is the
+        # consequence, which is what Triggers B/D/F/G were catching.
+        if frame.tps >= 15.0 and frame.timing_advance_deg >= 50.0 and frame.rpm >= 1500.0:
+            prev_adv = self.prev_frame.timing_advance_deg if self.prev_frame else 0.0
+            return (
+                "TRIGGER_H_PHANTOM_CLOSED_THROTTLE",
+                f"Ignition map jumped to overrun ({prev_adv:.1f}deg -> "
+                f"{frame.timing_advance_deg:.1f}deg BTDC) while throttle was open at "
+                f"{frame.tps:.1f}% and engine was at {frame.rpm:.0f} RPM. ECU acted on a "
+                f"throttle-closed input that the throttle position did not support.",
+            )
+
+        # --- Trigger I: Throttle Signal Dropout (V-shaped TPS collapse) ---
+        # Within a single poll cycle TPS is sampled several times; a large spread
+        # between the min and max of those samples while the rider holds a steady
+        # open throttle is a signal dropout, not a real throttle movement -- no
+        # human closes and reopens the throttle that fast.
+        if (
+            frame.tps_sample_count >= 2
+            and frame.rpm >= 1500.0
+            and frame.tps_max_cycle >= 12.0
+            and (frame.tps_max_cycle - frame.tps_min_cycle) >= 12.0
+        ):
+            return (
+                "TRIGGER_I_TPS_DROPOUT",
+                f"Throttle signal collapsed within one poll cycle: {frame.tps_max_cycle:.1f}% -> "
+                f"{frame.tps_min_cycle:.1f}% across {frame.tps_sample_count} samples at "
+                f"{frame.rpm:.0f} RPM. Too fast to be a real throttle movement.",
+            )
+
+        # --- Trigger J: Throttle A / Throttle B disagreement ---
+        # Only fires on bikes that report a second throttle sensor. If the two
+        # disagree sharply, one of the two signals is being corrupted, which
+        # isolates the fault to that sensor's own wiring rather than a shared
+        # supply or ground.
+        if (
+            frame.has_optional("throttle_b_pct")
+            and frame.rpm >= 1500.0
+            and abs(frame.tps - frame.throttle_b_pct) >= 15.0
+        ):
+            return (
+                "TRIGGER_J_THROTTLE_SENSOR_DISAGREE",
+                f"Throttle sensor A reads {frame.tps:.1f}% but sensor B reads "
+                f"{frame.throttle_b_pct:.1f}% at {frame.rpm:.0f} RPM.",
+            )
+
         # --- Trigger D: Constant TPS + RPM Drop (Cruising Stutter / Misfire) ---
         # Highest priority diagnostic for the rider's primary real-world symptom:
         # Engine stutters and EFI light flashes while holding constant throttle above idle.
@@ -252,7 +329,7 @@ class FlightRecorder:
                 max_prev_rpm = max(f.rpm for f in f_frames)
                 max_prev_tps = max(f.tps for f in f_frames)
                 rpm_drop_f = max_prev_rpm - frame.rpm
-                if max_prev_tps >= 25.0 and rpm_drop_f >= 350.0:
+                if max_prev_tps >= 25.0 and rpm_drop_f >= 350.0 and not self._looks_like_upshift(frame):
                     dt_ms = (frame.timestamp - f_frames[0].timestamp) * 1000
                     return (
                         "TRIGGER_F_HIGH_LOAD_CUT",
@@ -270,7 +347,7 @@ class FlightRecorder:
                 if tps_delta >= 4.0:
                     max_prev_rpm = max(f.rpm for f in g_frames)
                     rpm_loss = max_prev_rpm - frame.rpm
-                    if rpm_loss >= 80.0:
+                    if rpm_loss >= 80.0 and not self._looks_like_upshift(frame):
                         return (
                             "TRIGGER_G_ROLL_ON_BOG",
                             f"Roll-on bog: Throttle opened +{tps_delta:.1f}% (to {frame.tps:.1f}%), but RPM dropped from {max_prev_rpm:.0f} to {frame.rpm:.0f} (-{rpm_loss:.0f} RPM)",
@@ -318,7 +395,7 @@ class FlightRecorder:
             if recent_frames:
                 max_prev_rpm = max(f.rpm for f in recent_frames)
                 rpm_drop = max_prev_rpm - frame.rpm
-                if rpm_drop > 1500.0:
+                if rpm_drop > 1500.0 and not self._looks_like_upshift(frame):
                     dt_ms = (frame.timestamp - recent_frames[0].timestamp) * 1000
                     return (
                         "TRIGGER_B_RPM_COLLAPSE",
@@ -326,8 +403,11 @@ class FlightRecorder:
                     )
 
         # --- Trigger C: Transient Low Voltage Dip ---
-        # Transient low voltage dip (< 11.2V while ECU is communicating)
-        if 0.0 < frame.battery_volts < 11.2:
+        # Transient low voltage dip (< 11.2V while ECU is communicating).
+        # Requires a genuinely measured voltage: this ECU may not support the
+        # module-voltage PID at all, and a modelled voltage must never raise a
+        # hardware fault.
+        if frame.is_measured("battery_volts") and 0.0 < frame.battery_volts < 11.2:
             return (
                 "TRIGGER_C_VOLTAGE_DIP",
                 f"Transient battery voltage dip to {frame.battery_volts:.2f}V (< 11.2V threshold)",
@@ -669,35 +749,15 @@ class FlightRecorder:
         with open(report_file, "w", encoding="utf-8") as f_rep:
             f_rep.write(report_text)
 
-        # 1. Write Event CSV (24 columns)
+        # 1. Write Event CSV. Header comes from TelemetryFrame so it cannot drift
+        # out of step with to_csv_row() -- the hand-maintained copy that used to
+        # live here had dropped the efi_light column, which shifted every column
+        # after it by one in all previously written capture files.
         with open(csv_file, "w", newline="", encoding="utf-8") as f_csv:
             writer = csv.writer(f_csv)
-            writer.writerow([
-                "timestamp",
-                "elapsed_sec",
-                "rpm",
-                "drpm_dt",
-                "tps_pct",
-                "dtps_dt",
-                "timing_advance_deg",
-                "coil_dwell_ms",
-                "engine_load_pct",
-                "map_kpa",
-                "injection_time_ms",
-                "battery_volts",
-                "dvolts_dt",
-                "coolant_temp_c",
-                "air_temp_c",
-                "crank_sync",
-                "coil_1_fault",
-                "coil_2_fault",
-                "coil_3_fault",
-                "coil_4_fault",
-                "tip_over",
-                "active_dtcs",
-                "event_marker",
-                "raw_hex",
-            ])
+            header = list(TelemetryFrame.CSV_HEADER)
+            header[header.index("trigger_event")] = "event_marker"
+            writer.writerow(header)
             for frame in all_frames:
                 elapsed = frame.timestamp - trig_ts
                 is_trigger_point = abs(frame.timestamp - trig_ts) < 0.001

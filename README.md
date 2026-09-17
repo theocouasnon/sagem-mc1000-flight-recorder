@@ -100,17 +100,76 @@ The diagnostics loop alternates continuously between:
 
 ## 5. Anomaly Detection & Flight Recorder Engine (`flight_recorder.py`)
 
+### Signal Acquisition: Discovery, Not Guesswork
+
+On the ISO 9141 path the recorder asks the ECU which Mode 01 PIDs it supports
+(PID `0x00` support bitmask, with per-PID probing as a fallback) and polls only
+those. This matters: earlier builds assumed MAP (`0x0B`) and module voltage
+(`0x42`) were available and, when the ECU never answered, **back-filled them from
+a physical model**. The result was a logged "battery voltage" that was really
+`14.1 if rpm > 1000 else 12.5`, and a "MAP" that was a linear function of
+throttle position. Both looked like healthy sensor traces and were not data.
+
+Every signal now carries provenance — `measured`, `stale`, `estimated` or
+`unsupported` — and anything that is not real is written as an **empty CSV cell**
+rather than a plausible number. The two remaining derived values
+(`coil_dwell_ms`, `injection_time_ms`) are tagged `estimated` and blank out when
+their inputs are unavailable.
+
+### Throttle Oversampling
+
+Throttle position is queried several times per poll cycle (`--tps-oversample`,
+default 2), interleaved between the other signals, and each frame records
+`tps_min_cycle` / `tps_max_cycle` across those samples — the software equivalent
+of a multimeter's min-hold on the TPS signal wire. At one sample per cycle a
+sub-100ms dropout was only caught when it happened to straddle the sample.
+
 ### Trigger Rules
-- **Trigger A (Active Fault / Bitfield)**:
-  Any non-zero error byte returned in Service 0x18 or the telemetry error bitmask (e.g. Coil 1..4 breakdown, crank sync loss, tip-over trip).
-- **Trigger B (Sudden RPM Collapse)**:
-  Drop of $> 1500\text{ RPM}$ in $< 200\text{ ms}$ while TPS $> 2.0\%$ (momentary severe stall/loss under load).
-- **Trigger C (Transient Voltage Brownout)**:
-  Battery voltage dipping below $11.2\text{ V}$ while active (regulator/rectifier breakdown, brown connector corrosion).
+
+Evaluated in this order; the first match wins.
+
+- **Trigger H (Phantom Closed Throttle)** — *highest confidence*:
+  Ignition advance jumps to the closed-throttle / overrun map ($\ge 50°$ BTDC)
+  while TPS still reads $\ge 15\%$ open above 1,500 RPM. The ECU briefly believed
+  the throttle slammed shut and cut fuel. This cannot be an upshift or a rider
+  blip, because the ECU's own throttle reading says the throttle is open in the
+  same frame. RPM collapse, roll-on bog and high-load cut are all downstream
+  consequences of this.
+- **Trigger I (Throttle Signal Dropout)**:
+  TPS collapses by $\ge 12$ percentage points and recovers within a single poll
+  cycle. Too fast to be a real throttle movement.
+- **Trigger J (Throttle Sensor Disagreement)**:
+  Sensors A and B differ by $\ge 15\%$. Only active on ECUs that report a second
+  throttle sensor; isolates a fault to one sensor's wiring rather than a shared
+  supply or ground.
 - **Trigger D (Constant TPS + RPM Drop / Cruising Stutter)**:
-  * **Idle Exclusion**: Inactive below 2,000 RPM (guaranteeing zero false alarms at idle/warmup).
-  * **Steady Throttle Condition**: Requires $\text{TPS} \ge 4.0\%$ with throttle variation $\Delta \text{TPS} \le 2.0\%$ over a 500ms window.
-  * **Stumble Hesitation**: Fires when RPM suddenly drops by $\ge 250\text{ RPM}$ while throttle is held steady. This directly targets the Caponord cruising hesitation where the EFI light flashes momentarily due to coil primary/secondary arcing under combustion pressure load.
+  RPM drops $\ge 140$ RPM while throttle is held within $2.5\%$ above 1,800 RPM.
+- **Trigger F (High-Load Power Cut)**:
+  RPM drops $\ge 350$ RPM in $< 600$ ms under $\ge 25\%$ throttle above 2,500 RPM.
+- **Trigger G (Roll-On Bog)**:
+  Throttle opens $\ge 4\%$ but RPM falls, or ignition timing collapses to base retard.
+- **Trigger E (EFI Warning Lamp)**: rising edge of the commanded MIL bit.
+- **Trigger A (Active Fault / Bitfield)**:
+  Any DTC or fault bit (coils 1–4, crank sync loss, tip-over, injectors).
+- **Trigger B (Sudden RPM Collapse)**: $> 1500$ RPM in $< 200$ ms while TPS $> 2\%$.
+- **Trigger C (Transient Voltage Brownout)**: below $11.2$ V — **only when the
+  voltage is genuinely measured**, so a modelled value can never raise a
+  hardware fault.
+
+**Gearchange suppression.** Triggers B, F and G are suppressed when road speed
+(PID `0x0D`) shows the RPM drop was a gearchange: an upshift steps rpm/road-speed
+down to the next ratio while speed keeps rising, whereas a genuine cut leaves the
+ratio flat. Without road speed the guard stays inert and sensitivity is unchanged.
+
+### Capture Windows
+
+Pre- and post-trigger windows are specified in **seconds** (`pre_trigger_sec`,
+`post_trigger_sec`), not frame counts. The original frame counts assumed ~10 Hz
+polling; the ISO 9141 path actually runs near 3 Hz, which turned a nominal
+"2 second" post-trigger window into ~17 seconds during which the recorder did not
+evaluate triggers at all. Because this fault arrives in bursts, that blindness was
+swallowing the follow-up events — replaying the 17 Sep ride log through the fixed
+windows surfaces 16 events where the live run recorded 8.
 
 ### Output Artifacts
 On trigger, files are saved in `./captures/`:
@@ -161,6 +220,24 @@ python app.py --port /dev/ttyUSB0
 
 # Force 5-baud slow-init fallback
 python app.py --port COM3 --force-slow-init
+
+# Chasing a throttle-signal dropout: sample TPS 4x per cycle. Costs cycle rate,
+# so the RPM and advance traces get coarser -- worth it when the dropout is the
+# thing you are trying to catch.
+python app.py --port auto --web --tps-oversample 4
+
+# Skip PID discovery and poll the legacy fixed PID set (diagnostic escape hatch)
+python app.py --port COM3 --no-pid-discovery
+```
+
+At connect the log lists exactly which signals this ECU will provide, e.g.:
+
+```
+ECU reports 9 supported Mode 01 PIDs: 01 03 04 05 0C 0E 0F 11 1F
+Logging 8 signals: air_temp, coolant_temp, engine_load_pct, fuel_system_status,
+  rpm, runtime_sec, timing_advance_deg, tps
+ECU does not support: map_kpa, vehicle_speed_kph, battery_volts, throttle_b_pct
+  -- these will be logged as empty, not estimated
 ```
 
 ### Running Offline in Mock Mode (No Hardware Needed)
@@ -189,8 +266,9 @@ python app.py --mock --mock-scenario steady_tps_stutter --headless --duration 10
 pytest -v
 ```
 
-All 27 test cases pass across protocol, serial echo stripping, telemetry scaling, blackbox triggers (including steady TPS stutter and idle exclusion), and REST/WebSocket API endpoints.
+All 54 test cases pass across protocol, serial echo stripping, telemetry scaling, PID decoding and provenance, blackbox triggers (including steady TPS stutter and idle exclusion), and REST/WebSocket API endpoints.
 - `tests/test_kwp2000.py`: Checksum calculation, frame formatting, positive/negative response parsing, error detection.
 - `tests/test_sagem_mc1000.py`: DTC mapping, telemetry formula scaling, discrete bitfield decoding.
-- `tests/test_flight_recorder.py`: 50-frame buffer mechanics, Trigger A, Trigger B, Trigger C, pre/post capture windows, and CSV/JSON output.
+- `tests/test_flight_recorder.py`: buffer mechanics, Trigger A, Trigger B, Trigger C, pre/post capture windows, and CSV/JSON output.
+- `tests/test_obd_signals.py`: Mode 01 PID table decoding, signal provenance (unsupported signals must stay blank, never be synthesised), TPS oversampling min/max, Triggers H/I/J, gearchange suppression, and time-based capture windows.
 - `tests/test_serial_and_mock.py`: Echo stripping, fast-init pulse sequence, slow-init handshake, and full multi-service polling cycle.

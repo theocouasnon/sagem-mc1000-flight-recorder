@@ -97,6 +97,9 @@ class KLineSerialBus:
         self.ser: Optional[serial.Serial] = None
         self.is_connected = False
         self.protocol = "KWP2000"
+        # Mode 01 PIDs the ECU actually answers, filled in by discover_supported_pids().
+        # Empty set means "not probed yet" -- callers should not treat it as "nothing supported".
+        self.supported_pids: set[int] = set()
 
     def open(self) -> None:
         """Open the serial port with 8N1 configuration."""
@@ -418,6 +421,70 @@ class KLineSerialBus:
         """Send ISO 9141 request and return validated response."""
         self.send_iso9141_request(mode, pid)
         return self.read_iso9141_response(expected_len=expected_len, timeout=timeout)
+
+    def discover_supported_pids(self, max_banks: int = 4) -> set[int]:
+        """
+        Probe which Mode 01 PIDs this ECU actually answers, instead of guessing.
+
+        PID 0x00 returns a 4-byte bitmask for PIDs 0x01-0x20, where bit 31 (MSB of
+        the first byte) is PID 0x01 and the LSB of the last byte is PID 0x20. If
+        PID 0x20 is itself flagged as supported, the next bank (0x20 -> 0x21-0x40)
+        can be queried the same way, and so on.
+
+        Returns the set of supported PID numbers, and caches it on self.supported_pids.
+        """
+        found: set[int] = set()
+        bank_pid = 0x00
+
+        for _ in range(max_banks):
+            resp = self.query_iso9141(mode=0x01, pid=bank_pid, expected_len=10, timeout=0.15)
+            if len(resp) < 9 or resp[3] != 0x41 or resp[4] != bank_pid:
+                logger.debug("PID bank 0x%02X not answered (%s)", bank_pid, resp.hex() or "no data")
+                break
+
+            mask = int.from_bytes(resp[5:9], "big")
+            for bit in range(32):
+                if mask & (1 << (31 - bit)):
+                    found.add(bank_pid + bit + 1)
+
+            next_bank = bank_pid + 0x20
+            if next_bank not in found:
+                break
+            bank_pid = next_bank
+
+        self.supported_pids = found
+        if found:
+            logger.info(
+                "ECU reports %d supported Mode 01 PIDs: %s",
+                len(found),
+                " ".join(f"{p:02X}" for p in sorted(found)),
+            )
+        else:
+            logger.warning(
+                "ECU did not answer PID 0x00 support bitmask -- falling back to probing "
+                "each PID individually"
+            )
+        return found
+
+    def probe_pids_individually(self, candidates: List[int]) -> set[int]:
+        """
+        Fallback discovery for ECUs that do not implement the PID 0x00 bitmask:
+        ask for each candidate PID once and keep the ones that answer.
+        Slow (~80ms each), so this only runs at connect time.
+        """
+        found: set[int] = set()
+        for pid in candidates:
+            resp = self.query_iso9141(mode=0x01, pid=pid, expected_len=7, timeout=0.12)
+            if len(resp) >= 6 and resp[3] == 0x41 and resp[4] == pid:
+                found.add(pid)
+        self.supported_pids = found
+        logger.info(
+            "Individual PID probe found %d of %d candidates: %s",
+            len(found),
+            len(candidates),
+            " ".join(f"{p:02X}" for p in sorted(found)) or "(none)",
+        )
+        return found
 
     def initialize(self) -> bool:
         """

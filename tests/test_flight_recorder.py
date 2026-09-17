@@ -262,7 +262,10 @@ def test_continuous_session_logging(tmp_path):
         lines = [line.strip().split(",") for line in f.readlines() if line.strip()]
 
     header = lines[0]
-    assert len(header) == 25
+    # The first 25 columns are the original schema and must keep their positions so
+    # older analysis tooling still works; newer signals are appended after them.
+    assert len(header) == len(TelemetryFrame.CSV_HEADER)
+    assert header[:25] == TelemetryFrame.CSV_HEADER[:25]
     assert header[0] == "timestamp"
     assert header[2] == "rpm"
     assert header[3] == "drpm_dt"
@@ -277,6 +280,8 @@ def test_continuous_session_logging(tmp_path):
     assert header[12] == "dvolts_dt"
     assert header[16] == "efi_light"
     assert header[24] == "raw_hex"
+    assert "tps_min_cycle" in header
+    assert "vehicle_speed_kph" in header
     assert len(lines) == 3  # 1 header + 2 data rows
 
 

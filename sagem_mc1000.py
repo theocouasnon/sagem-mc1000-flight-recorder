@@ -15,7 +15,7 @@ Encapsulates:
 
 from dataclasses import dataclass, field
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import ClassVar, Dict, List, Optional, Tuple
 
 from kwp2000 import (
     DEFAULT_SOURCE_TESTER,
@@ -150,6 +150,62 @@ class TelemetryFrame:
     map_kpa: float = 0.0              # Manifold Absolute Pressure (kPa)
     injection_time_ms: float = 0.0    # Fuel injection pulse width (ms)
 
+    # --- Throttle sub-sampling within one poll cycle -----------------------
+    # TPS is polled several times per cycle because the fault under investigation
+    # is a throttle-signal dropout far shorter than one cycle. tps_min_cycle is
+    # the software equivalent of a multimeter's min-hold on the TPS signal wire.
+    tps_min_cycle: float = 0.0
+    tps_max_cycle: float = 0.0
+    tps_sample_count: int = 0
+
+    # --- Additional Mode 01 signals, populated only when the ECU supports them ---
+    vehicle_speed_kph: float = 0.0
+    throttle_b_pct: float = 0.0       # Second throttle sensor, if fitted
+    rel_throttle_pct: float = 0.0
+    o2_b1s1_volts: float = 0.0
+    fuel_trim_short_pct: float = 0.0
+    fuel_trim_long_pct: float = 0.0
+    fuel_system_status: float = 0.0   # Open vs closed loop
+    baro_kpa: float = 0.0
+    absolute_load_pct: float = 0.0
+    runtime_sec: float = 0.0
+    gear_ratio: float = 0.0           # rpm / road speed, when speed is available
+
+    # Which signals came off the wire this frame, vs. carried over or never
+    # supported. Anything not listed as "measured" must not be trusted as data.
+    # Keys are TelemetryFrame attribute names; values are
+    # "measured" | "stale" | "unsupported" | "estimated".
+    signal_sources: Dict[str, str] = field(default_factory=dict)
+
+    def is_measured(self, name: str) -> bool:
+        """
+        True if this signal was genuinely read from the ECU at some point.
+
+        Frames built without provenance (the KWP2000 Service 0x21 path, and
+        hand-built test frames) report True: their values come straight off the
+        wire, so there is nothing to distrust. Only the ISO 9141 path populates
+        signal_sources, and that is where fabricated values used to creep in.
+        """
+        if not self.signal_sources:
+            return True
+        return self.signal_sources.get(name) in ("measured", "stale")
+
+    def has_optional(self, name: str) -> bool:
+        """
+        Strict provenance check for signals that may simply not exist on this bike.
+
+        Unlike is_measured(), a frame with no provenance answers False here: an
+        optional signal left at its zero default must never be mistaken for a real
+        reading of zero, which would fire faults on every bike that lacks it.
+        """
+        return self.signal_sources.get(name) in ("measured", "stale")
+
+    def _csv_num(self, name: str, value: float, fmt: str = "{:.2f}") -> str:
+        """Format a signal for CSV, emitting an empty cell when it is not real data."""
+        if self.signal_sources and not self.is_measured(name):
+            return ""
+        return fmt.format(value)
+
     @property
     def has_active_fault(self) -> bool:
         """True if any DTC is present or any discrete fault bit is active."""
@@ -204,15 +260,15 @@ class TelemetryFrame:
             f"{self.drpm_dt:.1f}",
             f"{self.tps:.2f}",
             f"{self.dtps_dt:.2f}",
-            f"{self.timing_advance_deg:.2f}",
-            f"{self.coil_dwell_ms:.2f}",
-            f"{self.engine_load_pct:.1f}",
-            f"{self.map_kpa:.1f}",
-            f"{self.injection_time_ms:.2f}",
-            f"{self.battery_volts:.2f}",
-            f"{self.dvolts_dt:.3f}",
-            f"{self.coolant_temp:.1f}",
-            f"{self.air_temp:.1f}",
+            self._csv_num("timing_advance_deg", self.timing_advance_deg),
+            self._csv_num("coil_dwell_ms", self.coil_dwell_ms),
+            self._csv_num("engine_load_pct", self.engine_load_pct, "{:.1f}"),
+            self._csv_num("map_kpa", self.map_kpa, "{:.1f}"),
+            self._csv_num("injection_time_ms", self.injection_time_ms),
+            self._csv_num("battery_volts", self.battery_volts),
+            self._csv_num("battery_volts", self.dvolts_dt, "{:.3f}"),
+            self._csv_num("coolant_temp", self.coolant_temp, "{:.1f}"),
+            self._csv_num("air_temp", self.air_temp, "{:.1f}"),
             "1" if self.crank_sync else "0",
             "1" if self.efi_light_on else "0",
             "1" if self.coil_fault_1 else "0",
@@ -223,7 +279,37 @@ class TelemetryFrame:
             ";".join(str(d) for d in self.active_dtcs) if self.active_dtcs else "NONE",
             trigger_note,
             self.raw_hex,
+            # --- appended columns (older files simply lack these) ---
+            f"{self.tps_min_cycle:.2f}",
+            f"{self.tps_max_cycle:.2f}",
+            str(self.tps_sample_count),
+            self._csv_num("vehicle_speed_kph", self.vehicle_speed_kph, "{:.1f}"),
+            self._csv_num("gear_ratio", self.gear_ratio, "{:.1f}"),
+            self._csv_num("throttle_b_pct", self.throttle_b_pct),
+            self._csv_num("rel_throttle_pct", self.rel_throttle_pct),
+            self._csv_num("o2_b1s1_volts", self.o2_b1s1_volts, "{:.3f}"),
+            self._csv_num("fuel_trim_short_pct", self.fuel_trim_short_pct, "{:.1f}"),
+            self._csv_num("fuel_trim_long_pct", self.fuel_trim_long_pct, "{:.1f}"),
+            self._csv_num("fuel_system_status", self.fuel_system_status, "{:.0f}"),
+            self._csv_num("baro_kpa", self.baro_kpa, "{:.1f}"),
+            self._csv_num("absolute_load_pct", self.absolute_load_pct, "{:.1f}"),
+            self._csv_num("runtime_sec", self.runtime_sec, "{:.0f}"),
         ]
+
+    # Column names for to_csv_row(), kept next to it so the two cannot drift apart.
+    # ClassVar, not a dataclass field.
+    CSV_HEADER: ClassVar[List[str]] = [
+        "timestamp", "elapsed_sec", "rpm", "drpm_dt", "tps_pct", "dtps_dt",
+        "timing_advance_deg", "coil_dwell_ms", "engine_load_pct", "map_kpa",
+        "injection_time_ms", "battery_volts", "dvolts_dt", "coolant_temp_c",
+        "air_temp_c", "crank_sync", "efi_light", "coil_1_fault", "coil_2_fault",
+        "coil_3_fault", "coil_4_fault", "tip_over", "active_dtcs", "trigger_event",
+        "raw_hex",
+        "tps_min_cycle", "tps_max_cycle", "tps_sample_count", "vehicle_speed_kph",
+        "gear_ratio", "throttle_b_pct", "rel_throttle_pct", "o2_b1s1_volts",
+        "fuel_trim_short_pct", "fuel_trim_long_pct", "fuel_system_status",
+        "baro_kpa", "absolute_load_pct", "runtime_sec",
+    ]
 
 
 def build_read_dtc_request(status_mask: int = 0x01) -> bytes:
@@ -447,6 +533,87 @@ def build_tester_present() -> bytes:
     return build_frame(SID_TESTER_PRESENT, b"")
 
 
+# ---------------------------------------------------------------------------
+# Standard OBD-2 Mode 01 PID table.
+#
+# The Caponord's Sagem MC1000 answers a subset of these; which subset is
+# discovered at connect time via KLineSerialBus.discover_supported_pids()
+# rather than assumed. Each entry is (signal_name, payload_bytes, decoder, unit).
+# Decoders take the payload bytes (everything after the echoed PID byte, before
+# the checksum) and return a float, or None if the payload is unusable.
+# ---------------------------------------------------------------------------
+
+def _d_percent_255(p: bytes) -> float:
+    return (p[0] * 100.0) / 255.0
+
+
+def _d_temp_offset40(p: bytes) -> float:
+    return float(p[0] - 40)
+
+
+def _d_trim_percent(p: bytes) -> float:
+    return (p[0] - 128) * 100.0 / 128.0
+
+
+OBD_PIDS: dict = {
+    0x03: ("fuel_system_status", 2, lambda p: float(p[0]), "bitfield"),
+    0x04: ("engine_load_pct", 1, _d_percent_255, "%"),
+    0x05: ("coolant_temp", 1, _d_temp_offset40, "degC"),
+    0x06: ("fuel_trim_short_pct", 1, _d_trim_percent, "%"),
+    0x07: ("fuel_trim_long_pct", 1, _d_trim_percent, "%"),
+    0x0B: ("map_kpa", 1, lambda p: float(p[0]), "kPa"),
+    0x0C: ("rpm", 2, lambda p: (p[0] * 256 + p[1]) / 4.0, "rpm"),
+    0x0D: ("vehicle_speed_kph", 1, lambda p: float(p[0]), "km/h"),
+    0x0E: ("timing_advance_deg", 1, lambda p: (p[0] / 2.0) - 64.0, "deg BTDC"),
+    0x0F: ("air_temp", 1, _d_temp_offset40, "degC"),
+    0x10: ("maf_gps", 2, lambda p: (p[0] * 256 + p[1]) / 100.0, "g/s"),
+    0x11: ("tps", 1, _d_percent_255, "%"),
+    0x14: ("o2_b1s1_volts", 2, lambda p: p[0] / 200.0, "V"),
+    0x15: ("o2_b1s2_volts", 2, lambda p: p[0] / 200.0, "V"),
+    0x1F: ("runtime_sec", 2, lambda p: float(p[0] * 256 + p[1]), "s"),
+    0x2F: ("fuel_level_pct", 1, _d_percent_255, "%"),
+    0x33: ("baro_kpa", 1, lambda p: float(p[0]), "kPa"),
+    0x42: ("battery_volts", 2, lambda p: (p[0] * 256 + p[1]) / 1000.0, "V"),
+    0x43: ("absolute_load_pct", 2, lambda p: (p[0] * 256 + p[1]) * 100.0 / 255.0, "%"),
+    0x44: ("equiv_ratio", 2, lambda p: (p[0] * 256 + p[1]) / 32768.0, "lambda"),
+    0x45: ("rel_throttle_pct", 1, _d_percent_255, "%"),
+    0x46: ("ambient_temp", 1, _d_temp_offset40, "degC"),
+    0x47: ("throttle_b_pct", 1, _d_percent_255, "%"),
+    0x5A: ("rel_pedal_pct", 1, _d_percent_255, "%"),
+}
+
+# PIDs worth probing one-by-one when the ECU does not implement the 0x00 bitmask.
+PROBE_CANDIDATE_PIDS = sorted(OBD_PIDS.keys())
+
+# Signals the recorder wants at the highest rate it can get. TPS leads because
+# the fault being chased is a sub-100ms throttle-signal dropout.
+HIGH_RATE_PIDS = (0x11, 0x0C, 0x0E)
+
+
+def decode_obd_response(resp: bytes) -> Optional[Tuple[str, float]]:
+    """
+    Decode one ISO 9141-2 Mode 01 response frame into (signal_name, value).
+
+    Frame layout: [48 6B D1] [41] [PID] [payload...] [checksum]
+    Returns None if the frame is malformed, is not a Mode 01 response, carries an
+    unknown PID, or is too short for that PID's payload.
+    """
+    if len(resp) < 6 or resp[3] != 0x41:
+        return None
+    pid = resp[4]
+    entry = OBD_PIDS.get(pid)
+    if entry is None:
+        return None
+    name, nbytes, decoder, _unit = entry
+    payload = resp[5:-1]
+    if len(payload) < nbytes:
+        return None
+    try:
+        return name, float(decoder(payload[:nbytes]))
+    except Exception:
+        return None
+
+
 def parse_iso9141_telemetry(
     rpm_resp: bytes,
     tps_resp: bytes,
@@ -595,3 +762,184 @@ def parse_iso9141_telemetry(
         map_kpa=map_kpa,
         injection_time_ms=inj_ms,
     )
+
+
+class TelemetrySampler:
+    """
+    Accumulates decoded Mode 01 signals across a poll cycle and builds TelemetryFrames.
+
+    Replaces the previous approach of synthesising unsupported signals from a
+    physical model. Anything the ECU does not answer is now reported as
+    unsupported rather than back-filled with a plausible-looking number, because
+    a fabricated voltage trace is worse than no voltage trace when the whole point
+    is to find an intermittent electrical fault.
+    """
+
+    # Signals that are genuinely derived rather than measured. They stay available
+    # (the dashboard uses them) but are tagged "estimated" so nothing downstream
+    # mistakes them for sensor data.
+    DERIVED = ("coil_dwell_ms", "injection_time_ms")
+
+    def __init__(self, supported_pids: Optional[set] = None):
+        self.supported_pids: set = set(supported_pids or ())
+        self.values: Dict[str, float] = {}
+        self.sources: Dict[str, str] = {}
+        self.dtc_state: Dict[str, object] = {"active_dtcs": [], "mil_on": False}
+        self._tps_cycle: List[float] = []
+        self._fresh: set = set()
+
+    @property
+    def supported_signals(self) -> List[str]:
+        """Human-readable names of the signals this ECU will actually give us."""
+        return sorted(
+            OBD_PIDS[p][0] for p in self.supported_pids if p in OBD_PIDS
+        )
+
+    def note_unsupported(self) -> None:
+        """Mark every table signal the ECU did not advertise as unsupported."""
+        supported_names = {OBD_PIDS[p][0] for p in self.supported_pids if p in OBD_PIDS}
+        for _pid, (name, _n, _d, _u) in OBD_PIDS.items():
+            if name not in supported_names:
+                self.sources.setdefault(name, "unsupported")
+
+    def ingest(self, resp: bytes) -> Optional[str]:
+        """Decode one response frame and fold it into the current cycle."""
+        decoded = decode_obd_response(resp)
+        if decoded is None:
+            return None
+        name, value = decoded
+        self.values[name] = value
+        self.sources[name] = "measured"
+        self._fresh.add(name)
+        if name == "tps":
+            self._tps_cycle.append(value)
+        return name
+
+    def ingest_mil(self, resp: bytes) -> None:
+        """Mode 01 PID 01: bit 7 of byte A is the commanded MIL (EFI lamp) state."""
+        if len(resp) >= 6 and resp[3] == 0x41 and resp[4] == 0x01:
+            self.dtc_state["mil_on"] = bool(resp[5] & 0x80)
+
+    def ingest_dtcs(self, resp: bytes) -> None:
+        """Mode 03 / 07 stored and pending trouble codes."""
+        if len(resp) >= 6:
+            self.dtc_state["active_dtcs"] = _decode_dtc_payload(resp[4:-1])
+
+    def build_frame(self, timestamp: Optional[float] = None, raw_hex: str = "") -> TelemetryFrame:
+        """Produce a TelemetryFrame from everything gathered so far."""
+        ts = timestamp if timestamp is not None else time.time()
+        v = self.values
+
+        # Anything measured earlier but not refreshed this cycle is stale, not fresh.
+        for name, src in list(self.sources.items()):
+            if src == "measured" and name not in self._fresh:
+                self.sources[name] = "stale"
+
+        dtcs: List[int] = list(self.dtc_state.get("active_dtcs") or [])
+        coil = {n: (n in dtcs) for n in (33, 34, 35, 36)}
+        sync = 12 not in dtcs
+        rpm = v.get("rpm", 0.0)
+
+        tps_samples = self._tps_cycle or [v.get("tps", 0.0)]
+
+        # Derived values, explicitly tagged as such.
+        load = v.get("engine_load_pct", 0.0)
+        coolant = v.get("coolant_temp", 0.0)
+        coil_dwell = 0.0
+        if self.sources.get("battery_volts") in ("measured", "stale"):
+            volts = v.get("battery_volts", 0.0)
+            coil_dwell = max(1.8, min(5.2, (36.0 / max(8.0, volts)) - 0.15))
+            self.sources["coil_dwell_ms"] = "estimated"
+        else:
+            self.sources["coil_dwell_ms"] = "unsupported"
+        inj_ms = 0.0
+        if self.sources.get("engine_load_pct") in ("measured", "stale"):
+            inj_ms = max(1.8, min(16.0, (load * 0.09) + (2.0 * (80.0 / max(25.0, coolant or 80.0)))))
+            self.sources["injection_time_ms"] = "estimated"
+        else:
+            self.sources["injection_time_ms"] = "unsupported"
+
+        # Gear ratio: only meaningful with a real road speed. This is what finally
+        # separates a genuine ignition/fuel cut from an ordinary upshift, because a
+        # gearchange steps this ratio and a cut leaves it flat.
+        gear_ratio = 0.0
+        speed = v.get("vehicle_speed_kph", 0.0)
+        if self.sources.get("vehicle_speed_kph") in ("measured", "stale") and speed > 5.0:
+            gear_ratio = rpm / speed
+            self.sources["gear_ratio"] = "measured"
+        else:
+            self.sources["gear_ratio"] = "unsupported"
+
+        mil_on = bool(self.dtc_state.get("mil_on"))
+        frame = TelemetryFrame(
+            timestamp=ts,
+            rpm=rpm,
+            tps=v.get("tps", 0.0),
+            coolant_temp=coolant,
+            air_temp=v.get("air_temp", 0.0),
+            battery_volts=v.get("battery_volts", 0.0),
+            crank_sync=sync,
+            coil_fault_1=coil[33],
+            coil_fault_2=coil[34],
+            coil_fault_3=coil[35],
+            coil_fault_4=coil[36],
+            tip_over_active=(41 in dtcs),
+            efi_light_on=(mil_on or bool(dtcs) or (not sync and rpm > 300)),
+            injector_fault_1=(42 in dtcs),
+            injector_fault_2=(43 in dtcs),
+            active_dtcs=dtcs,
+            raw_hex=raw_hex,
+            timing_advance_deg=v.get("timing_advance_deg", 0.0),
+            coil_dwell_ms=coil_dwell,
+            engine_load_pct=load,
+            map_kpa=v.get("map_kpa", 0.0),
+            injection_time_ms=inj_ms,
+            tps_min_cycle=min(tps_samples),
+            tps_max_cycle=max(tps_samples),
+            tps_sample_count=len(self._tps_cycle),
+            vehicle_speed_kph=speed,
+            throttle_b_pct=v.get("throttle_b_pct", 0.0),
+            rel_throttle_pct=v.get("rel_throttle_pct", 0.0),
+            o2_b1s1_volts=v.get("o2_b1s1_volts", 0.0),
+            fuel_trim_short_pct=v.get("fuel_trim_short_pct", 0.0),
+            fuel_trim_long_pct=v.get("fuel_trim_long_pct", 0.0),
+            fuel_system_status=v.get("fuel_system_status", 0.0),
+            baro_kpa=v.get("baro_kpa", 0.0),
+            absolute_load_pct=v.get("absolute_load_pct", 0.0),
+            runtime_sec=v.get("runtime_sec", 0.0),
+            gear_ratio=gear_ratio,
+            signal_sources=dict(self.sources),
+        )
+        return frame
+
+    def end_cycle(self) -> None:
+        """Reset per-cycle accumulators. Call after build_frame() for the last frame of a cycle."""
+        self._tps_cycle.clear()
+        self._fresh.clear()
+
+
+def _decode_dtc_payload(dtc_bytes: bytes) -> List[int]:
+    """Decode Mode 03/07 DTC byte pairs into Sagem two-digit fault numbers."""
+    decoded: List[int] = []
+    for i in range(0, len(dtc_bytes) - 1, 2):
+        b1, b2 = dtc_bytes[i], dtc_bytes[i + 1]
+        if b1 == 0 and b2 == 0:
+            continue
+        code_val = (b1 << 8) | b2
+        if code_val in (0x0351, 0x0330):
+            decoded.append(33)
+        elif code_val == 0x0352:
+            decoded.append(34)
+        elif code_val == 0x0353:
+            decoded.append(35)
+        elif code_val == 0x0354:
+            decoded.append(36)
+        elif code_val in (0x0335, 0x0336):
+            decoded.append(12)
+        elif code_val in (0x0120, 0x0121, 0x0122, 0x0123):
+            decoded.append(15)
+        elif code_val in (0x0115, 0x0116, 0x0117):
+            decoded.append(21)
+        else:
+            decoded.append(b2 if b2 > 0 else b1)
+    return decoded
