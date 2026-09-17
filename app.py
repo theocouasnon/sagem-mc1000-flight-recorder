@@ -175,6 +175,15 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--fast",
+        action="store_true",
+        help=(
+            "Spend the whole K-line budget on the four signals that matter: MIL "
+            "lamp, RPM, throttle and ignition advance, every cycle, nothing else. "
+            "About 3.7 Hz each instead of 2 Hz frames with a 1 Hz lamp."
+        ),
+    )
+    parser.add_argument(
         "--no-pid-discovery",
         action="store_true",
         help="Skip the Mode 01 PID support scan at connect and poll the legacy fixed set",
@@ -370,6 +379,15 @@ class SagemDiagnosticsApp:
         include PIDs the ECU actually advertised at connect time, so no budget is
         wasted on PIDs that will never answer.
         """
+        if getattr(self.args, "fast", False):
+            # Everything that matters, every cycle, nothing else. The K-line
+            # allows roughly 14.7 queries per second total (~68ms each, set by
+            # the ECU's response latency, not the baud rate), so every slow PID
+            # polled is rate stolen from the signals being investigated.
+            # Coolant, intake air and load change slowly enough to be worthless
+            # here, and no DTC has ever been stored on this bike.
+            return [(0x01, 0x11, 7), (0x01, 0x0C, 8), (0x01, 0x0E, 7)]
+
         focus = getattr(self.args, "focus", None)
         if focus:
             # Single-signal mode: one query per cycle, so the cycle rate IS the
@@ -396,6 +414,9 @@ class SagemDiagnosticsApp:
         """
         if getattr(self.args, "focus", None):
             return []
+
+        if getattr(self.args, "fast", False):
+            return [(0x01, 0x01, 10)]     # MIL only, every cycle
 
         # MIL status EVERY cycle, not every other one.
         #
