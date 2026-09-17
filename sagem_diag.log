@@ -673,3 +673,118 @@
 2026-09-17 16:17:29,792 [INFO] sagem.serial: Fast-Init successful! ECU Key Bytes: ea8f
 2026-09-17 16:17:33,256 [WARNING] sagem.recorder: >>> FLIGHT RECORDER TRIGGERED: TRIGGER_E_EFI_LIGHT_ON - Sagem MC1000 commanded EFI warning light ON (MIL active) at 4092 RPM, TPS 28.2%
 2026-09-17 16:17:35,800 [INFO] sagem.serial: Closed K-Line serial port COM3
+2026-09-17 16:22:22,831 [INFO] sagem: Auto-detected FTDI K-Line adapter on port: COM9
+2026-09-17 16:22:22,833 [INFO] sagem: Connecting to Sagem MC1000 on COM9 @ 10400 baud...
+2026-09-17 16:22:22,851 [INFO] sagem.serial: Opened K-Line serial port COM9 at 10400 baud
+2026-09-17 16:22:22,851 [INFO] sagem.serial: Physical hardware on COM9: testing Caponord Sagem MC1000 Slow-Init (0x33)...
+2026-09-17 16:22:22,851 [INFO] sagem.serial: Attempting 5-Baud Slow-Init (target=0x33) on COM9...
+2026-09-17 16:22:25,409 [INFO] sagem.serial: Slow-init: Received sync 0x55, KB1=0x08, KB2=0x08
+2026-09-17 16:22:25,491 [INFO] sagem.serial: 5-Baud Slow-Init handshake successful (ACK 0xCC)!
+2026-09-17 16:22:25,681 [INFO] sagem.serial: ECU reports 12 supported Mode 01 PIDs: 01 04 05 06 07 0C 0E 0F 11 1C 20 40
+2026-09-17 16:22:25,682 [INFO] sagem: Logging 8 signals: air_temp, coolant_temp, engine_load_pct, fuel_trim_long_pct, fuel_trim_short_pct, rpm, timing_advance_deg, tps
+2026-09-17 16:22:25,682 [WARNING] sagem: ECU does not support: map_kpa, vehicle_speed_kph, battery_volts, throttle_b_pct -- these will be logged as empty, not estimated
+2026-09-17 16:22:46,633 [INFO] sagem.serial: Closed K-Line serial port COM9
+2026-09-17 16:23:17,714 [INFO] sagem: Auto-detected FTDI K-Line adapter on port: COM9
+2026-09-17 16:23:17,715 [INFO] sagem: Connecting to Sagem MC1000 on COM9 @ 10400 baud...
+2026-09-17 16:23:17,724 [INFO] sagem.serial: Opened K-Line serial port COM9 at 10400 baud
+2026-09-17 16:23:17,724 [INFO] sagem.serial: Physical hardware on COM9: testing Caponord Sagem MC1000 Slow-Init (0x33)...
+2026-09-17 16:23:17,724 [INFO] sagem.serial: Attempting 5-Baud Slow-Init (target=0x33) on COM9...
+2026-09-17 16:23:20,282 [INFO] sagem.serial: Slow-init: Received sync 0x55, KB1=0x08, KB2=0x08
+2026-09-17 16:23:20,362 [INFO] sagem.serial: 5-Baud Slow-Init handshake successful (ACK 0xCC)!
+2026-09-17 16:23:20,554 [INFO] sagem.serial: ECU reports 12 supported Mode 01 PIDs: 01 04 05 06 07 0C 0E 0F 11 1C 20 40
+2026-09-17 16:23:20,554 [INFO] sagem: Logging 8 signals: air_temp, coolant_temp, engine_load_pct, fuel_trim_long_pct, fuel_trim_short_pct, rpm, timing_advance_deg, tps
+2026-09-17 16:23:20,554 [WARNING] sagem: ECU does not support: map_kpa, vehicle_speed_kph, battery_volts, throttle_b_pct -- these will be logged as empty, not estimated
+2026-09-17 16:23:50,750 [INFO] sagem.serial: Closed K-Line serial port COM9
+2026-09-17 16:24:08,569 [INFO] sagem: Auto-detected FTDI K-Line adapter on port: COM9
+2026-09-17 16:24:08,570 [INFO] sagem: Connecting to Sagem MC1000 on COM9 @ 10400 baud...
+2026-09-17 16:24:08,580 [INFO] sagem.serial: Opened K-Line serial port COM9 at 10400 baud
+2026-09-17 16:24:08,580 [INFO] sagem.serial: Physical hardware on COM9: testing Caponord Sagem MC1000 Slow-Init (0x33)...
+2026-09-17 16:24:08,580 [INFO] sagem.serial: Attempting 5-Baud Slow-Init (target=0x33) on COM9...
+2026-09-17 16:24:11,137 [INFO] sagem.serial: Slow-init: Received sync 0x55, KB1=0x08, KB2=0x08
+2026-09-17 16:24:11,217 [INFO] sagem.serial: 5-Baud Slow-Init handshake successful (ACK 0xCC)!
+2026-09-17 16:24:11,409 [INFO] sagem.serial: ECU reports 12 supported Mode 01 PIDs: 01 04 05 06 07 0C 0E 0F 11 1C 20 40
+2026-09-17 16:24:11,410 [INFO] sagem: Logging 8 signals: air_temp, coolant_temp, engine_load_pct, fuel_trim_long_pct, fuel_trim_short_pct, rpm, timing_advance_deg, tps
+2026-09-17 16:24:11,410 [WARNING] sagem: ECU does not support: map_kpa, vehicle_speed_kph, battery_volts, throttle_b_pct -- these will be logged as empty, not estimated
+2026-09-17 16:25:11,590 [INFO] sagem.serial: Closed K-Line serial port COM9
+2026-09-17 16:25:51,853 [INFO] sagem: Auto-detected FTDI K-Line adapter on port: COM9
+2026-09-17 16:25:51,854 [INFO] sagem: Connecting to Sagem MC1000 on COM9 @ 10400 baud...
+2026-09-17 16:25:51,859 [INFO] sagem.serial: Opened K-Line serial port COM9 at 10400 baud
+2026-09-17 16:25:51,859 [INFO] sagem.serial: Physical hardware on COM9: testing Caponord Sagem MC1000 Slow-Init (0x33)...
+2026-09-17 16:25:51,859 [INFO] sagem.serial: Attempting 5-Baud Slow-Init (target=0x33) on COM9...
+2026-09-17 16:25:54,416 [INFO] sagem.serial: Slow-init: Received sync 0x55, KB1=0x08, KB2=0x08
+2026-09-17 16:25:54,890 [WARNING] sagem.serial: Slow-init: Expected ack 0xCC, got f7
+2026-09-17 16:25:54,890 [INFO] sagem.serial: Initiating ISO 14230 Fast-Init on COM9...
+2026-09-17 16:25:55,310 [WARNING] sagem.serial: Fast-Init failed: Timeout waiting for response frame start
+2026-09-17 16:25:55,311 [INFO] sagem.serial: Attempting Slow-Init (0x11)...
+2026-09-17 16:25:55,811 [INFO] sagem.serial: Attempting 5-Baud Slow-Init (target=0x11) on COM9...
+2026-09-17 16:25:59,159 [WARNING] sagem.serial: Slow-init: Expected sync byte 0x55 & key bytes, got None
+2026-09-17 16:25:59,159 [ERROR] sagem: Connection failed: Failed to initialize ECU communication on COM9 via Slow-Init (0x33), Fast-Init, and Slow-Init (0x11).
+2026-09-17 16:27:13,435 [INFO] sagem: Auto-detected FTDI K-Line adapter on port: COM9
+2026-09-17 16:27:13,436 [INFO] sagem: Connecting to Sagem MC1000 on COM9 @ 10400 baud...
+2026-09-17 16:27:13,445 [INFO] sagem.serial: Opened K-Line serial port COM9 at 10400 baud
+2026-09-17 16:27:13,445 [INFO] sagem.serial: Physical hardware on COM9: testing Caponord Sagem MC1000 Slow-Init (0x33)...
+2026-09-17 16:27:13,445 [INFO] sagem.serial: Attempting 5-Baud Slow-Init (target=0x33) on COM9...
+2026-09-17 16:27:15,987 [INFO] sagem.serial: Slow-init: Received sync 0x55, KB1=0x08, KB2=0x08
+2026-09-17 16:27:16,067 [INFO] sagem.serial: 5-Baud Slow-Init handshake successful (ACK 0xCC)!
+2026-09-17 16:27:16,259 [INFO] sagem.serial: ECU reports 12 supported Mode 01 PIDs: 01 04 05 06 07 0C 0E 0F 11 1C 20 40
+2026-09-17 16:27:16,259 [INFO] sagem: Logging 8 signals: air_temp, coolant_temp, engine_load_pct, fuel_trim_long_pct, fuel_trim_short_pct, rpm, timing_advance_deg, tps
+2026-09-17 16:27:16,259 [WARNING] sagem: ECU does not support: map_kpa, vehicle_speed_kph, battery_volts, throttle_b_pct -- these will be logged as empty, not estimated
+2026-09-17 16:27:31,428 [INFO] sagem.serial: Closed K-Line serial port COM9
+2026-09-17 16:27:39,662 [INFO] sagem: Auto-detected FTDI K-Line adapter on port: COM9
+2026-09-17 16:27:39,664 [INFO] sagem: Connecting to Sagem MC1000 on COM9 @ 10400 baud...
+2026-09-17 16:27:39,680 [INFO] sagem.serial: Opened K-Line serial port COM9 at 10400 baud
+2026-09-17 16:27:39,681 [INFO] sagem.serial: Physical hardware on COM9: testing Caponord Sagem MC1000 Slow-Init (0x33)...
+2026-09-17 16:27:39,681 [INFO] sagem.serial: Attempting 5-Baud Slow-Init (target=0x33) on COM9...
+2026-09-17 16:27:42,238 [INFO] sagem.serial: Slow-init: Received sync 0x55, KB1=0x08, KB2=0x08
+2026-09-17 16:27:42,318 [INFO] sagem.serial: 5-Baud Slow-Init handshake successful (ACK 0xCC)!
+2026-09-17 16:27:42,510 [INFO] sagem.serial: ECU reports 12 supported Mode 01 PIDs: 01 04 05 06 07 0C 0E 0F 11 1C 20 40
+2026-09-17 16:27:42,511 [INFO] sagem: Logging 8 signals: air_temp, coolant_temp, engine_load_pct, fuel_trim_long_pct, fuel_trim_short_pct, rpm, timing_advance_deg, tps
+2026-09-17 16:27:42,511 [WARNING] sagem: ECU does not support: map_kpa, vehicle_speed_kph, battery_volts, throttle_b_pct -- these will be logged as empty, not estimated
+2026-09-17 16:29:12,670 [INFO] sagem.serial: Closed K-Line serial port COM9
+2026-09-17 16:29:44,910 [INFO] sagem: Auto-detected FTDI K-Line adapter on port: COM9
+2026-09-17 16:29:44,911 [INFO] sagem: Connecting to Sagem MC1000 on COM9 @ 10400 baud...
+2026-09-17 16:29:44,915 [INFO] sagem.serial: Opened K-Line serial port COM9 at 10400 baud
+2026-09-17 16:29:44,915 [INFO] sagem.serial: Physical hardware on COM9: testing Caponord Sagem MC1000 Slow-Init (0x33)...
+2026-09-17 16:29:44,915 [INFO] sagem.serial: Attempting 5-Baud Slow-Init (target=0x33) on COM9...
+2026-09-17 16:29:47,473 [INFO] sagem.serial: Slow-init: Received sync 0x55, KB1=0x08, KB2=0x08
+2026-09-17 16:29:47,553 [INFO] sagem.serial: 5-Baud Slow-Init handshake successful (ACK 0xCC)!
+2026-09-17 16:29:47,745 [INFO] sagem.serial: ECU reports 12 supported Mode 01 PIDs: 01 04 05 06 07 0C 0E 0F 11 1C 20 40
+2026-09-17 16:29:47,745 [INFO] sagem: Logging 8 signals: air_temp, coolant_temp, engine_load_pct, fuel_trim_long_pct, fuel_trim_short_pct, rpm, timing_advance_deg, tps
+2026-09-17 16:29:47,745 [WARNING] sagem: ECU does not support: map_kpa, vehicle_speed_kph, battery_volts, throttle_b_pct -- these will be logged as empty, not estimated
+2026-09-17 16:30:32,897 [INFO] sagem.serial: Closed K-Line serial port COM9
+2026-09-17 16:31:05,679 [INFO] sagem: Auto-detected FTDI K-Line adapter on port: COM9
+2026-09-17 16:31:05,681 [INFO] sagem: Connecting to Sagem MC1000 on COM9 @ 10400 baud...
+2026-09-17 16:31:05,697 [INFO] sagem.serial: Opened K-Line serial port COM9 at 10400 baud
+2026-09-17 16:31:05,697 [INFO] sagem.serial: Physical hardware on COM9: testing Caponord Sagem MC1000 Slow-Init (0x33)...
+2026-09-17 16:31:05,697 [INFO] sagem.serial: Attempting 5-Baud Slow-Init (target=0x33) on COM9...
+2026-09-17 16:31:08,254 [INFO] sagem.serial: Slow-init: Received sync 0x55, KB1=0x08, KB2=0x08
+2026-09-17 16:31:08,334 [INFO] sagem.serial: 5-Baud Slow-Init handshake successful (ACK 0xCC)!
+2026-09-17 16:31:08,526 [INFO] sagem.serial: ECU reports 12 supported Mode 01 PIDs: 01 04 05 06 07 0C 0E 0F 11 1C 20 40
+2026-09-17 16:31:08,526 [INFO] sagem: Logging 8 signals: air_temp, coolant_temp, engine_load_pct, fuel_trim_long_pct, fuel_trim_short_pct, rpm, timing_advance_deg, tps
+2026-09-17 16:31:08,526 [WARNING] sagem: ECU does not support: map_kpa, vehicle_speed_kph, battery_volts, throttle_b_pct -- these will be logged as empty, not estimated
+2026-09-17 16:33:38,707 [INFO] sagem.serial: Closed K-Line serial port COM9
+2026-09-17 16:37:46,416 [INFO] sagem: Auto-detected FTDI K-Line adapter on port: COM9
+2026-09-17 16:37:46,417 [INFO] sagem: Connecting to Sagem MC1000 on COM9 @ 10400 baud...
+2026-09-17 16:37:46,428 [INFO] sagem.serial: Opened K-Line serial port COM9 at 10400 baud
+2026-09-17 16:37:46,428 [INFO] sagem.serial: Physical hardware on COM9: testing Caponord Sagem MC1000 Slow-Init (0x33)...
+2026-09-17 16:37:46,428 [INFO] sagem.serial: Attempting 5-Baud Slow-Init (target=0x33) on COM9...
+2026-09-17 16:37:48,985 [INFO] sagem.serial: Slow-init: Received sync 0x55, KB1=0x08, KB2=0x08
+2026-09-17 16:37:49,065 [INFO] sagem.serial: 5-Baud Slow-Init handshake successful (ACK 0xCC)!
+2026-09-17 16:37:49,257 [INFO] sagem.serial: ECU reports 12 supported Mode 01 PIDs: 01 04 05 06 07 0C 0E 0F 11 1C 20 40
+2026-09-17 16:37:49,258 [INFO] sagem: Logging 8 signals: air_temp, coolant_temp, engine_load_pct, fuel_trim_long_pct, fuel_trim_short_pct, rpm, timing_advance_deg, tps
+2026-09-17 16:37:49,258 [WARNING] sagem: ECU does not support: map_kpa, vehicle_speed_kph, battery_volts, throttle_b_pct -- these will be logged as empty, not estimated
+2026-09-17 16:39:49,439 [INFO] sagem.serial: Closed K-Line serial port COM9
+2026-09-17 16:40:03,638 [INFO] sagem: Auto-detected FTDI K-Line adapter on port: COM9
+2026-09-17 16:40:03,639 [INFO] sagem: Connecting to Sagem MC1000 on COM9 @ 10400 baud...
+2026-09-17 16:40:03,646 [INFO] sagem.serial: Opened K-Line serial port COM9 at 10400 baud
+2026-09-17 16:40:03,646 [INFO] sagem.serial: Physical hardware on COM9: testing Caponord Sagem MC1000 Slow-Init (0x33)...
+2026-09-17 16:40:03,646 [INFO] sagem.serial: Attempting 5-Baud Slow-Init (target=0x33) on COM9...
+2026-09-17 16:40:06,204 [INFO] sagem.serial: Slow-init: Received sync 0x55, KB1=0x08, KB2=0x08
+2026-09-17 16:40:06,284 [INFO] sagem.serial: 5-Baud Slow-Init handshake successful (ACK 0xCC)!
+2026-09-17 16:40:06,475 [INFO] sagem.serial: ECU reports 12 supported Mode 01 PIDs: 01 04 05 06 07 0C 0E 0F 11 1C 20 40
+2026-09-17 16:40:06,476 [INFO] sagem: Logging 8 signals: air_temp, coolant_temp, engine_load_pct, fuel_trim_long_pct, fuel_trim_short_pct, rpm, timing_advance_deg, tps
+2026-09-17 16:40:06,476 [WARNING] sagem: ECU does not support: map_kpa, vehicle_speed_kph, battery_volts, throttle_b_pct -- these will be logged as empty, not estimated
+2026-09-17 16:41:24,052 [WARNING] sagem.recorder: >>> FLIGHT RECORDER TRIGGERED: TRIGGER_I_THROTTLE_FLOOR_HIT - Throttle signal reached the closed stop (3.5%) at 5262 RPM while open before (3.5%) and after (21.2%). Samples: 22.7 3.9 3.5 3.5
+2026-09-17 16:41:27,386 [INFO] sagem.recorder: Captured flight recorder event saved: capture_20260917_164123_611_trigger_i_throttle_floor_hit.csv, capture_20260917_164123_611_trigger_i_throttle_floor_hit.json, capture_20260917_164123_611_trigger_i_throttle_floor_hit_report.txt
+2026-09-17 16:41:27,386 [INFO] sagem: Blackbox capture #1 saved: capture_20260917_164123_611_trigger_i_throttle_floor_hit.csv [TRIGGER_I_THROTTLE_FLOOR_HIT | RPM: 3559, TPS: 21.2% (min 3.5), Adv: 11.5°, EFI: OFF]
+2026-09-17 16:42:37,029 [INFO] sagem.serial: Closed K-Line serial port COM9

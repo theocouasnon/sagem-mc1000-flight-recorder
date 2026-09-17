@@ -173,34 +173,26 @@ def test_overrun_advance_alone_is_not_a_fault(tmp_path):
                     timing_advance_deg=60.0) is None
 
 
-def test_trigger_i_catches_a_dropout_across_a_cycle_boundary(tmp_path):
+def test_a_rider_blipping_the_throttle_does_not_trigger(tmp_path):
     """
-    When the dip straddles the cycle boundary it is no longer interior, so H
-    cannot see it. I confirms on the following frame that the throttle reopened,
-    which a genuine closure would not do.
+    Regression test for a removed trigger. Taken verbatim from the first
+    engine-running test, where Trigger I flagged this as a dropout. Every
+    sequence is a monotonic ramp: the rider opening and shutting between rev
+    sweeps. Nothing here may fire.
     """
     rec = FlightRecorder(captures_dir=str(tmp_path))
-    rec.feed_frame(_frame(timestamp=10.0, tps=30.0, tps_samples=[30.0] * 4,
-                          tps_min_cycle=30.0, tps_max_cycle=30.0, tps_sample_count=4))
-    rec.feed_frame(_frame(timestamp=10.5, tps=3.1, tps_samples=[25.0, 3.1, 3.1, 3.1],
-                          tps_min_cycle=3.1, tps_max_cycle=25.0, tps_sample_count=4))
-    result = rec._check_triggers(
-        _frame(timestamp=11.0, tps=32.0, tps_samples=[32.0] * 4,
-               tps_min_cycle=32.0, tps_max_cycle=32.0, tps_sample_count=4))
-    assert result is not None
-    assert result[0] == "TRIGGER_I_THROTTLE_FLOOR_HIT"
-
-
-def test_trigger_i_ignores_a_closure_that_stays_shut(tmp_path):
-    rec = FlightRecorder(captures_dir=str(tmp_path))
-    rec.feed_frame(_frame(timestamp=20.0, tps=30.0, tps_samples=[30.0] * 4,
-                          tps_min_cycle=30.0, tps_max_cycle=30.0, tps_sample_count=4))
-    rec.feed_frame(_frame(timestamp=20.5, tps=3.1, tps_samples=[25.0, 3.1, 3.1, 3.1],
-                          tps_min_cycle=3.1, tps_max_cycle=25.0, tps_sample_count=4))
-    # Still shut on the next frame: the rider simply rolled off.
-    assert rec._check_triggers(
-        _frame(timestamp=21.0, tps=3.1, tps_samples=[3.1] * 4,
-               tps_min_cycle=3.1, tps_max_cycle=3.1, tps_sample_count=4)) is None
+    blips = [
+        (76.23, [3.5, 14.9, 22.0, 22.4]),
+        (76.68, [22.7, 3.9, 3.5, 3.5]),
+        (77.13, [3.5, 3.5, 14.1, 21.2]),
+        (77.58, [24.3, 18.8, 3.5, 3.5]),
+    ]
+    for t, samples in blips:
+        f = _frame(timestamp=t, rpm=4000.0, tps=samples[-1], tps_samples=samples,
+                   tps_min_cycle=min(samples), tps_max_cycle=max(samples),
+                   tps_sample_count=len(samples))
+        assert rec._check_triggers(f) is None, "false positive on a throttle blip at t=%s" % t
+        rec.feed_frame(f)
 
 
 def test_rpm_gate_skips_itself_when_rpm_is_not_polled(tmp_path):

@@ -356,22 +356,37 @@ class KLineSerialBus:
         self.ser.write(inv_kb2)
         self.ser.flush()
 
-        # Read echo and ECU inverted address byte ACK (~target_addr & 0xFF)
+        # Read the ECU's inverted-address ACK (~target_addr & 0xFF).
+        #
+        # Two things made this fragile before. The line is half-duplex, so our
+        # own inverted-KB2 byte comes back as an echo first -- but not always,
+        # since some adapters strip it -- and the old code assumed the ACK sat at
+        # exactly index 1. It also gave up after 400ms. On a warm ECU that has
+        # just finished a previous session the ACK can arrive later than that,
+        # which showed up as "Expected ack 0xCC, got f7": f7 is the echo of our
+        # own transmission, and the real ACK simply had not arrived yet.
+        #
+        # Now: scan for the ACK anywhere in what comes back, and wait longer.
         expected_ack = (~target_addr) & 0xFF
-        t_ack = time.time() + 0.4
+        echo = inv_kb2[0]
+        t_ack = time.time() + 1.0
         ack_rx = bytearray()
-        while time.time() < t_ack and len(ack_rx) < 2:
+        while time.time() < t_ack:
             b = self.ser.read(getattr(self.ser, "in_waiting", 0) or 1)
             if b:
                 ack_rx.extend(b)
+                if expected_ack in ack_rx:
+                    break
             else:
                 time.sleep(0.002)
 
-        if len(ack_rx) < 2 or ack_rx[1] != expected_ack:
+        if expected_ack not in ack_rx:
+            stray = bytes(x for x in ack_rx if x != echo)
             logger.warning(
-                "Slow-init: Expected ack 0x%02X, got %s",
+                "Slow-init: Expected ack 0x%02X, got %s%s",
                 expected_ack,
                 ack_rx.hex() if ack_rx else "None",
+                " (echo only -- ECU never answered)" if ack_rx and not stray else "",
             )
             return False
 
@@ -495,11 +510,20 @@ class KLineSerialBus:
         """
         if self.port_name != "MOCK":
             logger.info("Physical hardware on %s: testing Caponord Sagem MC1000 Slow-Init (0x33)...", self.port_name)
-            try:
-                if self.slow_init_5baud(address=0x33):
-                    return True
-            except Exception as e:
-                logger.debug("Slow-init 0x33 attempt error: %s", e)
+            # Retry: the 5-baud handshake is timing sensitive and fails
+            # intermittently, especially soon after a previous session when the
+            # ECU has not yet dropped back to idle. A single failed attempt is
+            # not evidence of a wiring problem, and treating it as one wastes
+            # time chasing the wrong thing.
+            for attempt in range(1, 4):
+                try:
+                    if self.slow_init_5baud(address=0x33):
+                        return True
+                except Exception as e:
+                    logger.debug("Slow-init 0x33 attempt %d error: %s", attempt, e)
+                if attempt < 3:
+                    logger.info("Slow-init attempt %d failed; retrying in 2s...", attempt)
+                    time.sleep(2.0)
 
         # Fast-Init fallback (0x11)
         try:

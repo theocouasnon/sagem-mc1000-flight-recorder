@@ -310,31 +310,22 @@ class FlightRecorder:
                         f"gearchange can produce this shape.",
                     )
 
-        # --- Trigger I: Throttle signal at the closed stop while open either side --
-        # Weaker than H but catches a dropout that straddles a cycle boundary, so
-        # the dip is truncated and no longer looks interior. Requires the reading
-        # to reach the closed-throttle stop, and both neighbouring FRAMES to be
-        # well open, so a genuine closure (which stays shut for several cycles)
-        # cannot qualify.
-        if (
-            self._running_fast_enough(frame)
-            and frame.tps_min_cycle <= 5.0
-            and frame.tps_max_cycle >= 15.0
-            and self.prev_frame is not None
-            and self.prev_frame.tps >= 15.0
-        ):
-            self._pending_dropout = frame
-        elif getattr(self, "_pending_dropout", None) is not None:
-            pending = self._pending_dropout
-            self._pending_dropout = None
-            if frame.tps >= 15.0 and (frame.timestamp - pending.timestamp) <= 1.5:
-                return (
-                    "TRIGGER_I_THROTTLE_FLOOR_HIT",
-                    f"Throttle signal reached the closed stop "
-                    f"({pending.tps_min_cycle:.1f}%) at {pending.rpm:.0f} RPM while open "
-                    f"before ({self.prev_frame.tps:.1f}%) and after ({frame.tps:.1f}%). "
-                    f"Samples: {' '.join('%.1f' % x for x in pending.tps_samples)}",
-                )
+        # --- Trigger I: REMOVED --------------------------------------------
+        # It fired when the throttle reached the closed stop with open frames
+        # either side, meaning to catch a dropout whose dip straddles a cycle
+        # boundary. It cannot: a rider closing the throttle produces exactly the
+        # same frame-level pattern, and during blipping they reopen within one
+        # cycle too, so timing does not separate them either.
+        #
+        # It produced a false positive on the very first engine-running test,
+        # flagging the sequence 22.7;3.9;3.5;3.5 -- a clean monotonic ramp down,
+        # i.e. the rider shutting the throttle between rev sweeps. It never fired
+        # on the ride logs, so it has contributed nothing but noise.
+        #
+        # Missing a boundary-straddling dropout is the better failure: trigger
+        # counts are being used as evidence here, and a false positive sends
+        # someone chasing a fault that is not there. Only Trigger H, which
+        # requires an interior dip bracketed by open readings, survives.
 
         # --- Trigger J: Throttle A / Throttle B disagreement ---
         # Only active on bikes that report a second throttle sensor. This ECU does
