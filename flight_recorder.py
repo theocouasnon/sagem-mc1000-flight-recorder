@@ -4,8 +4,9 @@ Flight Recorder & Real-Time Anomaly Detection Engine for Sagem MC1000.
 Blackbox Engine Features:
 - Rolling circular buffer of recent telemetry frames.
 - Multi-channel transient anomaly detection. Triggers, in priority order:
-    Trigger H: Phantom closed throttle -- ECU runs its overrun ignition map
-               (advance >= 50 deg BTDC) while TPS still reads open. The highest
+    Trigger H: Phantom closed throttle -- advance >= 50 deg BTDC while TPS still
+               reads open. This bike's own calibration tops out at 26, so that is
+               an out-of-range state, not a real timing figure. The highest
                confidence signature of the intermittent cut, because an upshift
                or a rider throttle blip cannot produce it.
     Trigger I: Throttle signal dropout -- TPS collapses and recovers within a
@@ -245,8 +246,11 @@ class FlightRecorder:
         - Trigger C: Transient low voltage dip (< 11.2V).
         """
         # --- Trigger H: Phantom Closed Throttle (highest-confidence signature) ---
-        # The ECU switches to its closed-throttle / overrun ignition map (advance
-        # snaps to ~60 deg BTDC) while the throttle is demonstrably still open.
+        # The ECU reports ~60 deg BTDC advance while the throttle is demonstrably
+        # still open. Decoding this bike's own calibration (see tuneecu_map.py)
+        # shows the ignition table tops out at 26, so 60 is not a value the
+        # ignition map can produce at all -- it is an out-of-range state the ECU
+        # enters when it stops firing normally, not a legitimate overrun curve.
         # This cannot be an upshift or a rider throttle blip: the ECU's own TPS
         # reading says the throttle is open in the same frame. It means the ECU
         # briefly believed the throttle slammed shut, cut fuel, and the engine
@@ -256,7 +260,7 @@ class FlightRecorder:
             prev_adv = self.prev_frame.timing_advance_deg if self.prev_frame else 0.0
             return (
                 "TRIGGER_H_PHANTOM_CLOSED_THROTTLE",
-                f"Ignition map jumped to overrun ({prev_adv:.1f}deg -> "
+                f"Ignition advance jumped out of calibrated range ({prev_adv:.1f}deg -> "
                 f"{frame.timing_advance_deg:.1f}deg BTDC) while throttle was open at "
                 f"{frame.tps:.1f}% and engine was at {frame.rpm:.0f} RPM. ECU acted on a "
                 f"throttle-closed input that the throttle position did not support.",

@@ -129,9 +129,11 @@ sub-100ms dropout was only caught when it happened to straddle the sample.
 Evaluated in this order; the first match wins.
 
 - **Trigger H (Phantom Closed Throttle)** — *highest confidence*:
-  Ignition advance jumps to the closed-throttle / overrun map ($\ge 50°$ BTDC)
-  while TPS still reads $\ge 15\%$ open above 1,500 RPM. The ECU briefly believed
-  the throttle slammed shut and cut fuel. This cannot be an upshift or a rider
+  Ignition advance jumps to $\ge 50°$ BTDC while TPS still reads $\ge 15\%$ open
+  above 1,500 RPM. Decoding this bike's own calibration (section 5b) shows its
+  ignition table tops out at **26**, so ~60° is not a value the ignition map can
+  produce — it is an out-of-range state the ECU enters when it stops firing
+  normally. The ECU briefly believed the throttle slammed shut and cut fuel. This cannot be an upshift or a rider
   blip, because the ECU's own throttle reading says the throttle is open in the
   same frame. RPM collapse, roll-on bog and high-load cut are all downstream
   consequences of this.
@@ -196,13 +198,52 @@ Verified on the exported Caponord map: decrypt then re-encrypt reproduces the
 original byte for byte, entropy drops from 7.96 to 6.95 bits/byte, and the map
 identifier recovered from the header ("011123") matches the exported filename.
 
-`find_tables()` locates calibration grids structurally, by looking for
-rectangular regions whose neighbouring cells vary smoothly. It deliberately does
-not label them: TuneECU resolves table addresses through a per-ECU catalogue
-(its `mType` / `eAddr` arrays), and for Sagem ECUs `CheckMapID` matches a map to
-a catalogue entry on only **two bits** of the map ID, so the exported file alone
-does not identify which table is which. The axis breakpoints TuneECU
-interpolates over are included as `DEF_REV` (32 rpm points, 800-12000),
+### Matching the Caponord to TuneECU's catalogue (solved)
+
+TuneECU resolves table addresses through two static tables: `mType` (716 rows of
+8) describing each supported ECU, and `eAddr` (62 rows of 40) holding that ECU's
+table addresses. The Aprilia family was found by joining TuneECU's `sagemID`
+table — which maps date-coded Sagem ECU identifiers to catalogue numbers — to
+`mType` on the catalogue number in the high word of column 0. All eleven Aprilia
+rows (`mType` rows 88–99, catalogue numbers 24583–24837) share **`eAddr` row
+12**, so every Caponord and RST Futura map uses the same layout.
+
+Those are ECU addresses; the map file is the flash image behind a header, so
+`file_offset = ecu_address − 0x7790`. That offset was derived from the ignition
+RPM axis and then confirmed by it decoding to exact round values.
+
+```bash
+python tuneecu_map.py "011123Map.hex" --caponord
+```
+
+```
+Ignition table (eAddr[6], ecu 0xAAB7)
+      1000 1500 1750 2000 2500 3000 3500 4000 4500 5000 5500 6000 6500 7000 8000 9000   rpm
+ r0     10   10   10   10    8    8    8    9    8    9    9    9   10   11   13   14
+ r1     10   10   10   10    9    9   10   10   10   11   12   12   12   13   14   16
+ r2     10   10   10   10   10   10   11   11   13   14   16   17   17   17   17   19
+ r3     10   10   10   10   10   12   14   17   19   21   22   23   23   23   23   23
+ r4     10   10   10   10   11   14   18   20   22   24   25   26   26   26   26   26
+ r5     10   10   10   10   11   14   18   20   22   24   25   26   26   26   26   26
+  range 8..26
+```
+
+Advance rises with RPM along each row and with lighter load down the rows — the
+shape of a normal ignition map. The table set for this ECU, from TuneECU's
+`tvMap_Define`, is **F, I, I Limit, I Min, I Idle, I Idle (N), AF/1, AF/2, Idle,
+Warmup**; only the ignition table and its axis have been decoded and checked, and
+`CAPONORD_KNOWN` lists exactly those rather than guessing at the rest.
+
+**This corrects an earlier reading of the fault.** The ~60° BTDC the ECU reports
+during a cut was described as the "closed-throttle / overrun ignition map". It is
+not: this calibration tops out at **26**, so 60 is not a value the ignition map
+can produce at all. It is an out-of-range state the ECU enters when it stops
+firing normally. The conclusion is unchanged and if anything firmer — the ECU
+enters a state its own calibration cannot express, at a moment when its own
+throttle reading says the throttle is open.
+
+`find_tables()` remains for exploring maps from ECUs not in the catalogue. The
+generic axis breakpoints are included as `DEF_REV` (32 rpm points, 800–12000),
 `DEF_THROTTLE` (16 points, tenths of a percent) and `DEF_TEMP`.
 
 ### Sagem native diagnostics (partially mapped, unverified)

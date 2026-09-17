@@ -31,7 +31,7 @@ class Reader:
     def resolve(self, tok):
         if isinstance(tok, StringToken):
             try:
-                return '"%s"' % self.pe.net.user_strings.get_us(tok.rid).value
+                return '"%s"' % self.pe.net.user_strings.get(tok.rid).value
             except Exception:
                 return "<str?>"
         t, rid = tok.table, tok.rid

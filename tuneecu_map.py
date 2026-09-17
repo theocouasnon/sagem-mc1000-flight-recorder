@@ -129,11 +129,12 @@ def find_tables(
     Locate candidate calibration tables by looking for rectangular regions whose
     neighbouring cells vary smoothly.
 
-    This finds tables structurally; it does NOT label them. TuneECU resolves table
-    addresses through a per-ECU catalogue (its `mType` / `eAddr` arrays), and for
-    Sagem ECUs it matches a map to a catalogue entry on only two bits of the map
-    ID, so the exported file alone does not say which table is which. Treat the
-    results as candidates to inspect, not as identified maps.
+    This finds tables structurally and does NOT label them. For a Caponord or RST
+    Futura use `caponord_ignition_table()` and CAPONORD_KNOWN instead, which read
+    the addresses TuneECU itself uses. This scan stays useful for exploring a map
+    whose ECU is not in the catalogue below, or for finding tables that are in the
+    file but not in the catalogue. Treat the results as candidates, not as
+    identified maps.
 
     Returns non-overlapping candidates sorted by smoothness (smoothest first).
     """
@@ -190,6 +191,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--tables", action="store_true",
                     help="scan for candidate calibration tables")
     ap.add_argument("--limit", type=int, default=6, help="tables to show")
+    ap.add_argument("--caponord", action="store_true",
+                    help="decode the known Caponord / RST Futura tables by name")
     args = ap.parse_args(argv)
 
     raw = Path(args.path).read_bytes()
@@ -203,6 +206,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         Path(args.out).write_bytes(result)
         print("wrote %s" % args.out)
 
+    if args.caponord and not args.encrypt:
+        axis, grid = caponord_ignition_table(result)
+        print("")
+        print("Ignition table (eAddr[6], ecu 0x%04X)"
+              % CAPONORD_KNOWN["ignition_table"]["ecu"])
+        print("      " + " ".join("%4.0f" % v for v in axis) + "   rpm")
+        for r, row in enumerate(grid):
+            print(" r%-2d  " % r + " ".join("%4d" % v for v in row))
+        flat = [v for row in grid for v in row]
+        print("  range %d..%d" % (min(flat), max(flat)))
+        print("")
+
     if args.tables and not args.encrypt:
         tables = find_tables(result)
         print("\n%d candidate tables (showing %d):" % (len(tables), min(args.limit, len(tables))))
@@ -210,6 +225,96 @@ def main(argv: Sequence[str] | None = None) -> int:
             print()
             print(format_table(t))
     return 0
+
+
+
+
+# ---------------------------------------------------------------------------
+# Aprilia Caponord / RST Futura map catalogue
+#
+# TuneECU resolves table addresses through two static tables: `mType` (716 rows
+# of 8) describes each supported ECU, and `eAddr` (62 rows of 40) holds that
+# ECU's table addresses. `SetSagemTable` reads mType[i*8+1] to pick the eAddr
+# row.
+#
+# The Aprilia family was located by joining TuneECU's `sagemID` table (which
+# maps date-coded Sagem ECU identifiers to catalogue numbers) to `mType` on the
+# catalogue number held in the high word of column 0. All eleven Aprilia rows
+# (mType rows 88-99, catalogue numbers 24583-24837) share **eAddr row 12**, so
+# every Caponord and RST Futura map uses the same table layout.
+#
+# Addresses in eAddr are ECU addresses. The map file is the flash image behind a
+# header, so file_offset = ecu_address - 0x7790. That offset was derived from
+# the ignition RPM axis and then confirmed by it decoding to exact round values.
+# ---------------------------------------------------------------------------
+
+CAPONORD_ADDRESS_OFFSET = 0x7790
+
+# eAddr row 12, verbatim.
+CAPONORD_EADDR_ROW = (
+    0x10008, 0x9F5E, 0x30D4, 0x9D52, 0x0, 0xAF22, 0xAAB7, 0x86A8, 0x0, 0x0,
+    0x86CA, 0x189ACA, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xB362, 0xAB82, 0xAC82,
+    0xBAD4, 0x0, 0x8286, 0x8686, 0xB93E, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+    0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+)
+
+# Node names for the Sagem table layout, from TuneECU's tvMap_Define (the block
+# that selects tabMapS). These are the tables TuneECU shows for this ECU:
+SAGEM_TABLE_NAMES = (
+    "F", "", "I", "I Limit", "I Min", "I Idle", "I Idle (N)", "",
+    "AF/1", "AF/2", "Idle", "Warmup",
+)
+
+# Confirmed content. Only entries this module has actually decoded and checked
+# are listed; the remaining eAddr slots are real addresses whose table identity
+# has not been pinned down, and are deliberately left out rather than guessed.
+CAPONORD_KNOWN = {
+    "ignition_rpm_axis": {
+        "eaddr_index": 21, "ecu": 0xBAD4, "count": 16,
+        "kind": "axis_u16_div4",
+        "note": "Decodes to 1000 1500 1750 2000 2500 3000 3500 4000 4500 5000 "
+                "5500 6000 6500 7000 8000 9000 rpm.",
+    },
+    "ignition_table": {
+        "eaddr_index": 6, "ecu": 0xAAB7, "width": 16, "rows": 6,
+        "kind": "grid_u8", "skip": 1,
+        "note": "Values 8..26, rising with rpm and with lighter load. The eAddr "
+                "address points one byte before the grid, hence skip=1. Rows "
+                "beyond 6 are zero fill.",
+    },
+}
+
+
+def caponord_file_offset(ecu_address: int) -> int:
+    """Translate a Caponord ECU address to an offset in the decrypted map file."""
+    return ecu_address - CAPONORD_ADDRESS_OFFSET
+
+
+def read_axis_u16_div4(plain: bytes, ecu_address: int, count: int) -> List[float]:
+    """Read an RPM axis: count little-endian u16 values, each divided by 4."""
+    off = caponord_file_offset(ecu_address)
+    return [v / 4 for v in struct.unpack_from("<%dH" % count, plain, off)]
+
+
+def read_grid_u8(plain: bytes, ecu_address: int, width: int, rows: int,
+                 skip: int = 0) -> List[List[int]]:
+    """Read a byte grid of `rows` x `width` starting at an ECU address."""
+    off = caponord_file_offset(ecu_address) + skip
+    return [list(plain[off + r * width: off + (r + 1) * width]) for r in range(rows)]
+
+
+def caponord_ignition_table(plain: bytes) -> Tuple[List[float], List[List[int]]]:
+    """
+    Return (rpm_axis, grid) for the Caponord ignition table.
+
+    The grid's units are not established. Values span 8..26, which is consistent
+    with degrees BTDC for this engine, but nothing in TuneECU was traced that
+    confirms the scaling, so do not treat a cell as a calibrated degree figure
+    without checking it against a live reading first.
+    """
+    axis = read_axis_u16_div4(plain, CAPONORD_KNOWN["ignition_rpm_axis"]["ecu"], 16)
+    grid = read_grid_u8(plain, CAPONORD_KNOWN["ignition_table"]["ecu"], 16, 6, skip=1)
+    return axis, grid
 
 
 if __name__ == "__main__":

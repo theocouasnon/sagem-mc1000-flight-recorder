@@ -72,3 +72,56 @@ def test_axis_tables_are_monotonic():
     assert list(DEF_REV) == sorted(DEF_REV)
     assert list(DEF_THROTTLE) == sorted(DEF_THROTTLE)
     assert DEF_THROTTLE[0] == 0 and DEF_THROTTLE[-1] == 1000  # tenths of a percent
+
+
+@pytest.mark.skipif(not REAL_MAP.exists(), reason="exported Caponord map not present")
+def test_caponord_ignition_table_and_axis():
+    """
+    The address catalogue is only trustworthy if the axis it implies decodes to
+    sensible values, so assert on the actual numbers rather than just the shape.
+    """
+    from tuneecu_map import CAPONORD_ADDRESS_OFFSET, caponord_ignition_table
+
+    plain = decrypt(REAL_MAP.read_bytes())
+    axis, grid = caponord_ignition_table(plain)
+
+    assert axis == [1000, 1500, 1750, 2000, 2500, 3000, 3500, 4000,
+                    4500, 5000, 5500, 6000, 6500, 7000, 8000, 9000]
+    assert len(grid) == 6 and all(len(r) == 16 for r in grid)
+
+    flat = [v for row in grid for v in row]
+    assert min(flat) == 8 and max(flat) == 26
+
+    # Advance rises with rpm along a row, and with lighter load down the rows.
+    assert grid[0][-1] > grid[0][0]
+    assert grid[4][-1] > grid[0][-1]
+
+    # The whole point for the cutout investigation: the ~60 deg BTDC the ECU
+    # reports during a cut is far outside anything this calibration holds.
+    assert max(flat) < 50
+
+
+@pytest.mark.skipif(not REAL_MAP.exists(), reason="exported Caponord map not present")
+def test_caponord_address_translation_is_self_consistent():
+    from tuneecu_map import CAPONORD_EADDR_ROW, caponord_file_offset
+
+    from tuneecu_map import CAPONORD_ADDRESS_OFFSET
+
+    plain = decrypt(REAL_MAP.read_bytes())
+    mapped, unmapped = [], []
+    for i, addr in enumerate(CAPONORD_EADDR_ROW):
+        if addr == 0 or addr > 0xFFFF:
+            continue                      # index 0 is a descriptor, 11 packs a count
+        (mapped if addr >= CAPONORD_ADDRESS_OFFSET else unmapped).append(i)
+
+    # Everything at or above the flash base must land inside the file.
+    for i in mapped:
+        off = caponord_file_offset(CAPONORD_EADDR_ROW[i])
+        assert 0 <= off < len(plain), "eAddr[%d] maps outside the file" % i
+
+    # Exactly one entry sits below the flash base and so is not a file pointer.
+    # Pinning this down means a future change that silently reinterprets it as an
+    # address shows up as a failure rather than as plausible-looking garbage.
+    assert unmapped == [2], "unexpected sub-base entries: %s" % unmapped
+    assert CAPONORD_EADDR_ROW[2] == 0x30D4
+    assert len(mapped) >= 12
