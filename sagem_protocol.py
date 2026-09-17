@@ -8,11 +8,14 @@ PIDs, but TuneECU reads a considerably richer set through Sagem-native
 identifiers -- including PER-CYLINDER ignition timing and injection pulse
 width, which generic OBD does not expose at all.
 
-NOTHING HERE HAS BEEN CONFIRMED AGAINST THE BIKE. The identifiers and framing
-are read out of TuneECU's tables and code; the response layouts and scaling
-factors are not yet known, because TuneECU decodes them in code paths that have
-not been traced. Treat every value below as a hypothesis to verify on hardware
-before trusting any number derived from it.
+THE SAGEM-NATIVE MATERIAL HAS NOT BEEN CONFIRMED AGAINST THE BIKE. The
+identifiers and framing are read out of TuneECU's tables and code; the response
+layouts and scaling factors are not yet known, because TuneECU decodes them in
+code paths that have not been traced. Treat every Sagem-native value here as a
+hypothesis to verify on hardware before trusting any number derived from it.
+
+The one exception is CAPONORD_SUPPORTED_MODE01_PIDS at the bottom of this file,
+which was read off the bike itself and is measured fact.
 
 Source methods: StartSagemCmd, SendSagemCmd, SendKeySagem, Setkeys,
 setSensor, setDiagInterface, SetSensorCount, SetSagemTable.
@@ -126,3 +129,42 @@ def why_this_matters() -> str:
         "only, pointing back at coils or injectors). The current recorder cannot "
         "tell those apart."
     )
+
+
+# --------------------------------------------------------------------------
+# What this ECU actually supports (measured, not inferred)
+# --------------------------------------------------------------------------
+#
+# Read off the bike on 17 Sep 2026 via the Mode 01 PID 0x00 support bitmask.
+# This is the empirical answer to what generic OBD can give us on a Caponord
+# ETV 1000, and it closes off several lines of enquiry for good.
+
+CAPONORD_SUPPORTED_MODE01_PIDS = (
+    0x01,  # monitor status / MIL
+    0x04,  # calculated engine load
+    0x05,  # coolant temperature
+    0x06,  # short term fuel trim, bank 1
+    0x07,  # long term fuel trim, bank 1
+    0x0C,  # engine rpm
+    0x0E,  # ignition timing advance
+    0x0F,  # intake air temperature
+    0x11,  # throttle position
+    0x1C,  # OBD standard this ECU conforms to
+    0x20,  # PID support bitmask, 0x21-0x40
+    0x40,  # PID support bitmask, 0x41-0x60
+)
+
+# Notably ABSENT, confirmed by the bitmask rather than by a silent timeout:
+#   0x0B  manifold absolute pressure  -- no MAP available over OBD
+#   0x0D  vehicle speed               -- so no gear ratio, and no way to tell an
+#                                        upshift from a cut by road speed
+#   0x42  control module voltage      -- no electrical supply visibility at all
+#   0x47  absolute throttle position B -- only one throttle sensor is reported
+#   0x14  O2 sensor                   -- no lambda feedback visible
+#
+# The fuel trim PIDs (0x06 / 0x07) answer but return a single frozen value for a
+# whole ride, so they carry no information in practice.
+#
+# The absence of 0x42 is why the recorder must never model a battery voltage:
+# there is no measurement to fall back on, and a modelled one would be indistinguishable
+# from a real trace while hiding exactly the kind of fault under investigation.
