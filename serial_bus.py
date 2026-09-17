@@ -437,6 +437,26 @@ class KLineSerialBus:
         self.send_iso9141_request(mode, pid)
         return self.read_iso9141_response(expected_len=expected_len, timeout=timeout)
 
+    def query_service(self, payload: bytes, expected_len: int = 9, timeout: float = 0.08) -> bytes:
+        """
+        Send an arbitrary service payload over the same ISO 9141 framing.
+
+        query_iso9141() only builds [mode] or [mode, pid], which covers OBD but
+        not KWP2000 service 0x22 (ReadDataByCommonIdentifier) with its 16-bit
+        identifier. That service is how TuneECU reads everything OBD does not
+        expose on this ECU, including the battery voltage.
+
+        A negative response (0x7F) comes back rather than being discarded:
+        "identifier not implemented" is a real answer and the probe needs to see
+        it. Such a frame is shorter than expected_len, so the read below runs out
+        its timeout before validating -- correct, just slower, which is fine for
+        a probe that runs once.
+        """
+        body = bytes([0x68, 0x6A, 0xF1]) + bytes(payload)
+        packet = body + bytes([sum(body) & 0xFF])
+        self.send_raw_with_echo_strip(packet)
+        return self.read_iso9141_response(expected_len=expected_len, timeout=timeout)
+
     def discover_supported_pids(self, max_banks: int = 4) -> set[int]:
         """
         Probe which Mode 01 PIDs this ECU actually answers, instead of guessing.

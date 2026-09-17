@@ -44,7 +44,7 @@ Conclusions live in [ANALYSIS.md](ANALYSIS.md).
 | P4 | Fuel pump and internal fuel line checked. No change. | 5/5 |
 | P5 | In-tank fuel filter inspected — clean. Tank has no rust or debris. | 5/5 |
 | P6 | TPS resistance swept on the bench, and its wiring checked — no dead spots found. | 4/5 |
-| P7 | TPS removed, refitted and re-initialised in TuneECU on 17 Sep. Closed-throttle reading moved 3.14% to 3.92%. Max reads ~81%, which TuneECU's own validation accepts. | 5/5 |
+| P7 | TPS removed, refitted and re-initialised in TuneECU on 17 Sep. Closed-throttle reading moved 3.14% to 3.92%. Max reads ~81%, which is a display artefact of TuneECU's learned wide-open reference rather than a sensor limit — see E7. | 5/5 |
 
 ## Facts — from the logs
 
@@ -82,8 +82,11 @@ Performed *after* the TPS was removed and refitted — see the caveat under H4.
 | E1 | Mode 01 PIDs supported: 01, 04, 05, 06, 07, 0C, 0E, 0F, 11, 1C, 20, 40. | 5/5 |
 | E2 | **Not** supported: 0B (MAP), 0D (speed), 42 (module voltage), 47 (throttle B), 14 (O2). There is no second throttle sensor and no battery voltage over OBD. | 5/5 |
 | E3 | K-line budget is ~14.7 queries/sec, ~68 ms per query. Set by ECU response latency, not baud rate. | 5/5 |
-| E4 | TuneECU displays a battery voltage, so the value exists over the Sagem-proprietary path even though Mode 01 PID 0x42 is absent. Not yet implemented in the recorder. | 4/5 |
-| E5 | Ignition map (eAddr row 12, ECU 0xAAB7, file 0x03328) is 16 rpm columns x 6 load rows, values 8-26 deg BTDC. So 50-60 deg readings are **not** a map value — they are the overrun fuel-cut state. | 5/5 |
+| E4 | TuneECU reads live data over **KWP2000 service 0x22 (ReadDataByCommonIdentifier)**, with 16-bit identifiers and a fixed 2-byte reply, not just OBD Mode 01. Recovered from `SendSensorQuery`, `DataSensorReceive` and `SendIso` in TuneECU.exe; implemented in `sagem_native.py`. The top nibble of each table word selects the service: 0-3 means service 0x22 with the whole word as the identifier, 4-7 means Mode 01 with the nibble encoding the reply length. | 5/5 |
+| E5 | 32 Sagem identifiers have real decoders in TuneECU. Three are voltages: **0x0015 (raw/10, "#0.0 V", pushed to TuneECU's status bar - the on-screen battery voltage)** and **0x0001, 0x0002, 0x0018 (raw/51, "0.00 V", i.e. 0-5 V analogue channels)**. 0x0018 is grouped with the throttle in `sensorNode`. | 5/5 |
+| E6 | The scaling arithmetic for all 32 is exact, read out of the IL. **What most of them physically measure is not established** - the only evidence is the unit in TuneECU's format string and the `sensorNode` grouping. None has been read off the bike yet. | 5/5 |
+| E7 | TuneECU's throttle percentage is `int(raw * 58 / offWOT)` where `offWOT` is a learned wide-open value it raises whenever the result exceeds 100. That self-calibration explains the ~81% maximum: it is a display artefact of the learned reference, not a sensor limit. | 4/5 |
+| E8 | Ignition map (eAddr row 12, ECU 0xAAB7, file 0x03328) is 16 rpm columns x 6 load rows, values 8-26 deg BTDC. So 50-60 deg readings are **not** a map value — they are the overrun fuel-cut state. | 5/5 |
 
 ---
 
@@ -92,11 +95,12 @@ Performed *after* the TPS was removed and refitted — see the caveat under H4.
 | # | Hypothesis | Conf | What would settle it |
 |---|---|---|---|
 | H1 | The cuts are caused by a momentary loss of the throttle-position signal, which drives the ECU into fuel cut. | 4/5 | L2 and L3 are strong. The 4 events with no visible dip are the gap — consistent with 128 ms sampling missing shorter dropouts, but not proven. |
-| H2 | The dropout originates in the **shared 5 V sensor reference or its ground**, not in the throttle circuit. | 3/5 | The `--poll tps,coolant_temp,air_temp` ride. Thermistors on the same 5 V rail cannot move in 200 ms on their own. |
-| H3 | The dropout originates in the **throttle circuit alone** — sensor element, signal wire or connector. | 3/5 | Same experiment, opposite result. L6 leans slightly this way (partial dips, not floor hits) but the floor-vs-proportional test came out inconclusive: relative spread 0.45 proportional vs 0.76 fixed-floor. |
+| H2 | The dropout originates in the **shared 5 V sensor reference or its ground**, not in the throttle circuit. | 3/5 | `--sagem-poll decisive`: if `volts_a` dips with `tps_volts`, the rail is moving. Fallback is `--poll tps,coolant_temp,air_temp`, since thermistors on the same 5 V rail cannot move in 200 ms on their own. |
+| H3 | The dropout originates in the **throttle circuit alone** — sensor element, signal wire or connector. | 3/5 | Same experiment, opposite result: `tps_volts` dips while `volts_a` holds. L6 leans slightly this way (partial dips, not floor hits) but the floor-vs-proportional test came out inconclusive: relative spread 0.45 proportional vs 0.76 fixed-floor. |
 | H4 | The fault is not reproducible while stationary. | 2/5 | G1-G5 were all clean, but the TPS had been removed and refitted immediately beforehand, so a clean result cannot distinguish "needs load and vibration" from "disturbed back into working". Repeat the wiggles after the fault returns on a ride. |
 | H5 | The fault is a marginal crimp or partially broken strand rather than a loose pin, given it appears to need heat plus vibration. | 2/5 | A dropout appearing in the heat-soak wiggle (Test 4) but not the cold one. |
 | H6 | The sensor element itself has a worn track spot. | 1/5 | Largely against: L7 shows dropouts spread across 8 throttle bands, and G2 swept the full range clean. |
 | H7 | Fuel delivery. | 1/5 | **Effectively ruled out** by R1, R8, R9 and P4-P5. A fuel problem kills gradually; these are millisecond events with an EFI light. |
 | H8 | Crank sensor or coils. | 2/5 | Was previously called ruled out on log evidence. **That evidence is not reliable** — it came from Mode 07 polled roughly every 10 s with Mode 03 never read at all. P1 and P3 are the real evidence, and they only show that replacing or cleaning did not fix it. |
+| H10 | Identifier 0x0018 is the throttle sensor's signal voltage, and 0x0001/0x0002 are other sensors on the same 5 V reference. | 2/5 | Only the `sensorNode` grouping and the /51 scaling say so. `--sagem-probe` then twisting the grip: 0x0018 should track it and the others should not. If 0x0018 does not track the throttle, the naming in `sagem_native.py` is wrong and paths 1 and 3 change. |
 | H9 | Tip-over sensor, kill switch, side-stand switch, 30 A fuse holders, relays under the seat, or the battery earth strap. | 2/5 | Owner-community candidates for this model, none inspected yet. A bad earth strap would also produce H2. |

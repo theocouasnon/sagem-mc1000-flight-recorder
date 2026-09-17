@@ -61,7 +61,41 @@ This matters practically: H2 and H3 are different repairs in different places.
 
 ## Paths, in the order they are worth pursuing
 
-### Path 1 — Separate supply from signal (decisive, costs one ride)
+### Path 1 — Read the throttle voltage directly (now the best test available)
+
+```bash
+python app.py --port auto --sagem-probe
+```
+
+Then, if the voltages answer:
+
+```bash
+python app.py --port auto --sagem-poll decisive
+```
+
+TuneECU reads far more than OBD Mode 01 exposes, over KWP2000 service 0x22, and
+that path is now implemented — see [RECORDER_SETUP.md](RECORDER_SETUP.md) modes
+F and G. It gives three things nothing else did:
+
+- **`tps_volts` (0x0018)** — a 0–5 V channel grouped with the throttle. If this
+  is the throttle signal voltage, it measures the dropout *before* the ECU has
+  processed it into a percentage. That is a direct observation of the fault
+  rather than an inference from its consequence.
+- **`volts_a` (0x0001)** — a second 0–5 V channel on the same reference, acting
+  as the control. Dips together → shared 5 V supply or ground (H2). `tps_volts`
+  dips alone → throttle circuit (H3). **This is the same fork as path 2 but
+  measured in volts on the actual rail, not inferred from thermistor lag.**
+- **`batt_volts` (0x0015)** — the voltage TuneECU shows, which OBD cannot give
+  (PID 0x42 absent). Catches a charging or earth-strap fault.
+
+Do the probe first. The scalings are certain but what most identifiers measure
+is not, so the sanity check matters: `batt_volts` near 12.5 V ignition-on, near
+14 V running; `tps_volts` tracking the grip while the others hold still.
+
+### Path 2 — Separate supply from signal via the thermistors (fallback)
+
+Use this if the Sagem voltages do not answer, or `tps_volts` turns out not to be
+the throttle channel.
 
 ```bash
 python app.py --port auto --web --poll tps,coolant_temp,air_temp
@@ -78,18 +112,10 @@ reference**, and they physically cannot move in 200 ms on their own.
 No RPM in that set, deliberately. The cuts will not be visible in the log, but
 they will be felt, and what matters is what the three sensors do at that moment.
 
-This is the highest-value experiment available and nothing else should be
-changed until it has been run.
-
-### Path 2 — Read the voltage the ECU already reports (decisive, costs code)
-
-TuneECU displays a battery voltage even though Mode 01 PID 0x42 is absent (E4),
-so the value exists over the Sagem-proprietary path. Implementing that read in
-`sagem_protocol.py` would answer path 1's question **directly** rather than
-inferring it from thermistors, and would also catch a charging-system or earth
-fault that path 1 could miss.
-
-Worth doing in parallel with path 1, since it needs no bike time.
+Paths 1 and 2 answer the same question. Path 1 is better because it measures
+the rail directly instead of inferring it from how fast a thermistor can move,
+but path 2 needs no assumption about which identifier is which, so it is the
+fallback if the probe comes back empty.
 
 ### Path 3 — If it is the supply or ground
 

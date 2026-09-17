@@ -50,6 +50,15 @@ from sagem_mc1000 import (
     PROBE_CANDIDATE_PIDS,
     TelemetrySampler,
 )
+from sagem_native import (
+    NRC_NAMES,
+    PRESETS,
+    SAGEM_BY_NAME,
+    SAGEM_SIGNALS,
+    decode_response,
+    negative_response_code,
+    resolve_names,
+)
 from serial_bus import (
     KLineSerialBus,
     SerialBusError,
@@ -194,6 +203,28 @@ def parse_args() -> argparse.Namespace:
             "whether a throttle dip is accompanied by movement on other "
             "5V-referenced sensors, which separates a shared supply or ground "
             "fault from a fault in the throttle circuit alone."
+        ),
+    )
+    parser.add_argument(
+        "--sagem-probe",
+        action="store_true",
+        help=(
+            "Ask the ECU for every Sagem-native identifier TuneECU knows about, "
+            "print the raw bytes and the decoded value for each, then exit. This "
+            "is how the identifiers get confirmed: the transport and arithmetic "
+            "are certain, but what most of them physically measure is not."
+        ),
+    )
+    parser.add_argument(
+        "--sagem-poll",
+        type=str,
+        default=None,
+        help=(
+            "Continuously read the named Sagem-native signals as fast as the "
+            "K-line allows and log them, with raw values alongside decoded ones, "
+            "to captures/sagem_<timestamp>.csv. Takes a comma-separated list of "
+            "names from --sagem-probe, or a preset: decisive, volts, supply, "
+            "context, all. Rate per signal is 14.7/N Hz, so short sets only."
         ),
     )
     parser.add_argument(
@@ -380,6 +411,215 @@ class SagemDiagnosticsApp:
             self.logger.warning(
                 "ECU does not support: %s -- these will be logged as empty, not estimated",
                 ", ".join(missing),
+            )
+
+    # ----------------------------------------------------------------------
+    # Sagem-native reads (KWP2000 service 0x22), as TuneECU performs them
+    # ----------------------------------------------------------------------
+
+    def _query_native(self, signal, timeout: float = 0.12):
+        """
+        Read one Sagem-native identifier. Returns (raw, value) or None.
+
+        A refusal is logged with its reason rather than silently dropped: an
+        identifier the ECU does not implement answers 0x7F / 0x31, which is
+        genuine information about what this ECU exposes.
+        """
+        resp = self.bus.query_service(
+            signal.request(), expected_len=signal.expected_len(), timeout=timeout
+        )
+        if not resp:
+            return None
+
+        nrc = negative_response_code(resp)
+        if nrc is not None:
+            self.logger.debug(
+                "0x%04X refused: 0x%02X (%s)", signal.ident, nrc,
+                NRC_NAMES.get(nrc, "unknown code"),
+            )
+            return ("refused", nrc)
+
+        decoded = decode_response(resp)
+        if decoded is None:
+            self.logger.debug("0x%04X unparsed response: %s", signal.ident, resp.hex())
+            return None
+        _sig, raw, value = decoded
+        return (raw, value)
+
+    def _require_iso9141(self, what: str) -> bool:
+        """Sagem-native reads use the ISO 9141 framing; refuse to fake it elsewhere."""
+        if self.args.mock:
+            self.console.print(
+                "[yellow]%s needs the real ECU.[/yellow] The mock only implements the "
+                "KWP2000 service 0x21 path, not service 0x22, so every identifier "
+                "would report 'no response' and that would mean nothing." % what
+            )
+            return False
+        if self.bus.protocol != "ISO9141":
+            self.console.print(
+                "[yellow]%s needs the ISO 9141 session[/yellow] (this one negotiated "
+                "%s)." % (what, self.bus.protocol)
+            )
+            return False
+        return True
+
+    def _sagem_probe(self) -> None:
+        """
+        Walk every Sagem-native identifier once and report what came back.
+
+        The point is to separate three outcomes that all look like "no data" from
+        the outside: the ECU answered, the ECU refused, or nothing arrived at all.
+        Only the first means the identifier exists here.
+        """
+        if not self._require_iso9141("--sagem-probe"):
+            return
+        self.console.print(
+            "\n[bold]Sagem-native identifier probe[/bold]  "
+            "(KWP2000 service 0x22 and Mode 01, as TuneECU issues them)\n"
+        )
+        self.console.print(
+            "  [dim]ident  name            raw      value        unit       "
+            "confidence[/dim]"
+        )
+
+        answered, refused, silent = [], [], []
+        for signal in SAGEM_SIGNALS:
+            result = self._query_native(signal)
+            if result is None:
+                silent.append(signal)
+                self.console.print(
+                    "  0x%04X %-15s [dim]no response[/dim]" % (signal.ident, signal.name)
+                )
+                continue
+            if result[0] == "refused":
+                refused.append((signal, result[1]))
+                self.console.print(
+                    "  0x%04X %-15s [yellow]refused 0x%02X (%s)[/yellow]"
+                    % (signal.ident, signal.name, result[1],
+                       NRC_NAMES.get(result[1], "unknown"))
+                )
+                continue
+            raw, value = result
+            answered.append((signal, raw, value))
+            colour = {"high": "green", "medium": "cyan", "low": "white"}[signal.confidence]
+            self.console.print(
+                "  0x%04X %-15s 0x%04X  [%s]%10.3f[/%s] %-10s %s"
+                % (signal.ident, signal.name, raw, colour, value, colour,
+                   signal.unit or "-", signal.confidence)
+            )
+            time.sleep(0.01)
+
+        self.console.print(
+            "\n  [bold]%d answered, %d refused, %d silent[/bold]"
+            % (len(answered), len(refused), len(silent))
+        )
+
+        volts = [(s, r, v) for s, r, v in answered if s.unit == "V"]
+        if volts:
+            self.console.print(
+                "\n  [bold green]Voltages available over the Sagem path:[/bold green]"
+            )
+            for s, raw, v in volts:
+                self.console.print("    %-15s %6.2f V   (raw 0x%04X)" % (s.name, v, raw))
+            self.console.print(
+                "\n  [dim]Sanity check these before trusting them. batt_volts should sit\n"
+                "  near 12.5 V with the ignition on and the engine off, and near 14 V\n"
+                "  with it running. tps_volts should track the throttle grip; the other\n"
+                "  channels should not.[/dim]"
+            )
+        else:
+            self.console.print(
+                "\n  [yellow]No voltage identifier answered.[/yellow] If TuneECU still "
+                "shows a voltage,\n  it is reading it in a session state this probe is not in."
+            )
+        self.console.print("")
+
+    def _sagem_signals_from_args(self) -> List:
+        """Resolve --sagem-poll into a signal list."""
+        spec = (self.args.sagem_poll or "").strip()
+        if spec in PRESETS:
+            names = list(PRESETS[spec])
+        else:
+            names = [x.strip() for x in spec.split(",") if x.strip()]
+        try:
+            return resolve_names(names)
+        except KeyError as e:
+            raise SystemExit(str(e.args[0]))
+
+    def _sagem_poll_loop(self) -> None:
+        """
+        Log a chosen set of Sagem-native signals at maximum rate to their own CSV.
+
+        This writes a separate file rather than feeding TelemetryFrame, on
+        purpose: the frame's columns describe signals whose meaning is settled,
+        and most of these are not. The raw word is logged next to every decoded
+        value so a wrong scaling can be corrected after the fact without needing
+        another ride.
+        """
+        signals = self._sagem_signals_from_args()
+        if not self._require_iso9141("--sagem-poll"):
+            return
+        captures = Path(self.args.captures_dir)
+        captures.mkdir(parents=True, exist_ok=True)
+        path = captures / ("sagem_%s.csv" % time.strftime("%Y%m%d_%H%M%S"))
+
+        header = ["timestamp", "elapsed_sec"]
+        for s in signals:
+            header += ["%s" % s.name, "%s_raw" % s.name]
+
+        self.console.print(
+            "[bold green]Sagem-native logging:[/bold green] %s -> %s"
+            % (", ".join(s.name for s in signals), path.name)
+        )
+        self.console.print(
+            "[dim]Expect about %.1f Hz per signal. Ctrl-C to stop.[/dim]"
+            % (14.7 / max(1, len(signals)))
+        )
+
+        t0 = time.time()
+        rows = 0
+        refusals = {s.name: 0 for s in signals}
+        last_print = 0.0
+        with open(path, "w", newline="", encoding="utf-8") as fh:
+            fh.write(",".join(header) + "\n")
+            try:
+                while self.running:
+                    now = time.time()
+                    cells: List[str] = ["%.4f" % now, "%.3f" % (now - t0)]
+                    shown = []
+                    for s in signals:
+                        result = self._query_native(s, timeout=0.07)
+                        if result is None or result[0] == "refused":
+                            if result is not None:
+                                refusals[s.name] += 1
+                            cells += ["", ""]
+                            continue
+                        raw, value = result
+                        cells += ["%.4f" % value, "%d" % raw]
+                        shown.append("%s=%.2f" % (s.name, value))
+                    fh.write(",".join(cells) + "\n")
+                    rows += 1
+                    if rows % 20 == 0:
+                        fh.flush()
+                    if now - last_print >= 0.5:
+                        self.console.print(
+                            "[%5.1fs] %s" % (now - t0, "  ".join(shown) or "no data")
+                        )
+                        last_print = now
+                    if self.args.duration and (now - t0) >= self.args.duration:
+                        break
+            except KeyboardInterrupt:
+                pass
+
+        dur = max(0.001, time.time() - t0)
+        self.console.print(
+            "\n[bold]%d rows over %.0fs (%.1f Hz)[/bold] -> %s"
+            % (rows, dur, rows / dur, path)
+        )
+        dead = [n for n, c in refusals.items() if c > 0]
+        if dead:
+            self.console.print(
+                "[yellow]Refused by the ECU throughout: %s[/yellow]" % ", ".join(dead)
             )
 
     def _build_poll_schedule(self) -> List[tuple]:
@@ -629,6 +869,21 @@ class SagemDiagnosticsApp:
             self.console.print("  2. Ensure Caponord diagnostic connector (behind right frame spar) is firmly mated.")
             self.console.print("  3. Run with --mock to test software offline.")
             sys.exit(1)
+
+        # The Sagem-native modes replace the frame loop entirely: they speak a
+        # different service and log a different shape of data.
+        if getattr(self.args, "sagem_probe", False):
+            try:
+                self._sagem_probe()
+            finally:
+                self.stop()
+            return
+        if getattr(self.args, "sagem_poll", None):
+            try:
+                self._sagem_poll_loop()
+            finally:
+                self.stop()
+            return
 
         t_app_start = time.time()
         last_console_print = 0.0

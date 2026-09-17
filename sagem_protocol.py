@@ -8,11 +8,18 @@ PIDs, but TuneECU reads a considerably richer set through Sagem-native
 identifiers -- including PER-CYLINDER ignition timing and injection pulse
 width, which generic OBD does not expose at all.
 
-THE SAGEM-NATIVE MATERIAL HAS NOT BEEN CONFIRMED AGAINST THE BIKE. The
-identifiers and framing are read out of TuneECU's tables and code; the response
-layouts and scaling factors are not yet known, because TuneECU decodes them in
-code paths that have not been traced. Treat every Sagem-native value here as a
-hypothesis to verify on hardware before trusting any number derived from it.
+SUPERSEDED IN PART. When this file was written the response layouts and
+scaling factors were unknown, because TuneECU's decode path had not been traced.
+It has been since: see `sagem_native.py`, which carries the transport, the
+framing and the exact arithmetic for every identifier TuneECU implements,
+recovered from SendSensorQuery, DataSensorReceive and SendIso. The short version
+is that the top nibble of each table word selects the service -- nibbles 0-3 are
+KWP2000 service 0x22 with the whole word as a 16-bit identifier, nibbles 4-7 are
+plain OBD Mode 01 with the nibble encoding the reply length.
+
+What remains unverified is what most identifiers physically measure, and the
+security-access and trim-write material below. Nothing here has been confirmed
+against the bike.
 
 The one exception is CAPONORD_SUPPORTED_MODE01_PIDS at the bottom of this file,
 which was read off the bike itself and is measured fact.
