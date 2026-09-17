@@ -17,17 +17,31 @@ def spy(frame):
 rec._check_triggers = spy
 
 rows = list(csv.DictReader(open(src)))
+
+def num(row, key, default=0.0):
+    """Blank cells mean 'not measured' in post-17-Sep logs, not zero."""
+    v = row.get(key, '')
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return default
 t0 = float(rows[0]['timestamp'])
 for r in rows:
     f = TelemetryFrame(
-        timestamp=float(r['timestamp']), rpm=float(r['rpm']), tps=float(r['tps_pct']),
-        coolant_temp=float(r['coolant_temp_c']), air_temp=float(r['air_temp_c']),
-        battery_volts=float(r['battery_volts']), crank_sync=r['crank_sync']=='1',
+        timestamp=float(r['timestamp']), rpm=num(r,'rpm'), tps=num(r,'tps_pct'),
+        coolant_temp=num(r,'coolant_temp_c',80.0), air_temp=num(r,'air_temp_c',25.0),
+        battery_volts=num(r,'battery_volts'), crank_sync=r['crank_sync']=='1',
         coil_fault_1=False, coil_fault_2=False, coil_fault_3=False, coil_fault_4=False,
-        tip_over_active=False, timing_advance_deg=float(r['timing_advance_deg']),
-        engine_load_pct=float(r['engine_load_pct']), map_kpa=float(r['map_kpa']),
+        tip_over_active=False, timing_advance_deg=num(r,'timing_advance_deg'),
+        engine_load_pct=num(r,'engine_load_pct'), map_kpa=num(r,'map_kpa'),
         # Mark this replay as historical: voltage/MAP in these files were modelled,
         # so flag them unsupported and let the triggers ignore them.
+        tps_samples=(
+            [float(v) for v in r['tps_samples'].split(';') if v]
+            if r.get('tps_samples') else
+            [int(h[10:12], 16) * 100 / 255
+             for h in __import__('re').findall(r'tps:([0-9a-f]+)', r.get('raw_hex', ''))]
+        ),
         signal_sources={'rpm':'measured','tps':'measured','timing_advance_deg':'measured',
                         'coolant_temp':'measured','air_temp':'measured','engine_load_pct':'measured',
                         'battery_volts':'unsupported','map_kpa':'unsupported'},

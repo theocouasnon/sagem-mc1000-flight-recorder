@@ -668,3 +668,8 @@
 2026-09-17 13:44:40,237 [INFO] sagem.recorder: Captured flight recorder event saved: capture_20260917_134436_688_trigger_i_tps_dropout.csv, capture_20260917_134436_688_trigger_i_tps_dropout.json, capture_20260917_134436_688_trigger_i_tps_dropout_report.txt
 2026-09-17 13:44:40,240 [INFO] sagem: Blackbox capture #41 saved: capture_20260917_134436_688_trigger_i_tps_dropout.csv [TRIGGER_I_TPS_DROPOUT | RPM: 2928, TPS: 3.1% (min 3.1), Adv: 10.5°, EFI: OFF]
 2026-09-17 13:45:28,772 [INFO] sagem.serial: Closed K-Line serial port COM9
+2026-09-17 16:17:29,741 [INFO] sagem: Connecting to Sagem MC1000 on MOCK_ECU @ 10400 baud...
+2026-09-17 16:17:29,742 [INFO] sagem.serial: Initiating ISO 14230 Fast-Init on COM3...
+2026-09-17 16:17:29,792 [INFO] sagem.serial: Fast-Init successful! ECU Key Bytes: ea8f
+2026-09-17 16:17:33,256 [WARNING] sagem.recorder: >>> FLIGHT RECORDER TRIGGERED: TRIGGER_E_EFI_LIGHT_ON - Sagem MC1000 commanded EFI warning light ON (MIL active) at 4092 RPM, TPS 28.2%
+2026-09-17 16:17:35,800 [INFO] sagem.serial: Closed K-Line serial port COM3

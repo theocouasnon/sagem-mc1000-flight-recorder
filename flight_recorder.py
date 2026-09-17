@@ -4,13 +4,14 @@ Flight Recorder & Real-Time Anomaly Detection Engine for Sagem MC1000.
 Blackbox Engine Features:
 - Rolling circular buffer of recent telemetry frames.
 - Multi-channel transient anomaly detection. Triggers, in priority order:
-    Trigger H: Phantom closed throttle -- advance >= 50 deg BTDC while TPS still
-               reads open. This bike's own calibration tops out at 26, so that is
-               an out-of-range state, not a real timing figure. The highest
-               confidence signature of the intermittent cut, because an upshift
-               or a rider throttle blip cannot produce it.
-    Trigger I: Throttle signal dropout -- TPS collapses and recovers within a
-               single poll cycle, faster than any real throttle movement.
+    Trigger H: Throttle signal dropout during a roll-on -- the throttle reading
+               dips well below both the sample before and after it inside one
+               poll cycle, while the previous cycle was open throughout. No
+               throttle movement or gearchange can produce that shape. This is
+               the only signature that survived falsification against real rides.
+    Trigger I: Throttle signal reached the closed stop while the frames either
+               side were open -- catches a dropout that straddles a cycle
+               boundary, where the dip is truncated and no longer looks interior.
     Trigger J: Throttle sensor A/B disagreement (bikes with a second sensor).
     Trigger D: Steady throttle with RPM loss (cruising stutter).
     Trigger F: High-load power cut.
@@ -20,7 +21,11 @@ Blackbox Engine Features:
     Trigger B: Sudden RPM collapse.
     Trigger C: Transient low battery voltage dip, only when voltage is measured.
   Triggers B/F/G are suppressed when road speed shows the RPM drop was a
-  gearchange; without road speed that guard stays inert.
+  gearchange; this ECU does not report road speed, so that guard never engages
+  and those triggers fire on ordinary upshifts. Treat them as context around an
+  H or I event, not as evidence on their own: in the 17 Sep logs most large RPM
+  drops at open throttle were gearchanges, with ratios clustered at 0.79/0.84/
+  0.88/0.91.
 - Pre- and post-trigger capture windows are defined in SECONDS, not frame counts,
   because the ISO 9141 poll rate (~3 Hz) is a third of what the original frame
   counts assumed.
@@ -107,6 +112,9 @@ class FlightRecorder:
         self.pending_post_frames: List[TelemetryFrame] = []
         self.last_trigger_time: float = 0.0
         self.last_trigger_type: str = ""
+        # Trigger I holds a suspected floor-hit for one frame so it can confirm
+        # the throttle reopened rather than staying shut (a genuine closure).
+        self._pending_dropout: Optional[TelemetryFrame] = None
 
         # Event history
         self.captured_events: List[CapturedEvent] = []
@@ -218,6 +226,18 @@ class FlightRecorder:
         self.pending_pre_frames = list(self.buffer)[-self.pre_trigger_count :]
         self.pending_post_frames = []
 
+    @staticmethod
+    def _running_fast_enough(frame: TelemetryFrame, floor: float = 1500.0) -> bool:
+        """
+        RPM gate for the throttle triggers, which skips itself when RPM was never
+        read. In --focus tps mode only the throttle is polled, so RPM is absent;
+        the gate must not then silently disable the very detection that mode
+        exists for (stationary wiggle testing, where RPM is idle or zero anyway).
+        """
+        if not frame.signal_sources or frame.signal_sources.get("rpm") == "unsupported":
+            return True
+        return frame.rpm >= floor
+
     def _looks_like_upshift(self, frame: TelemetryFrame) -> bool:
         """
         True when an RPM drop is explained by a gearchange rather than a power cut.
@@ -245,50 +265,82 @@ class FlightRecorder:
         - Trigger B: Sudden RPM collapse (RPM drops > 1500 RPM in < 200ms while TPS > 2%).
         - Trigger C: Transient low voltage dip (< 11.2V).
         """
-        # --- Trigger H: Phantom Closed Throttle (highest-confidence signature) ---
-        # The ECU reports ~60 deg BTDC advance while the throttle is demonstrably
-        # still open. Decoding this bike's own calibration (see tuneecu_map.py)
-        # shows the ignition table tops out at 26, so 60 is not a value the
-        # ignition map can produce at all -- it is an out-of-range state the ECU
-        # enters when it stops firing normally, not a legitimate overrun curve.
-        # This cannot be an upshift or a rider throttle blip: the ECU's own TPS
-        # reading says the throttle is open in the same frame. It means the ECU
-        # briefly believed the throttle slammed shut, cut fuel, and the engine
-        # lost drive. Everything downstream (RPM collapse, roll-on bog) is the
-        # consequence, which is what Triggers B/D/F/G were catching.
-        if frame.tps >= 15.0 and frame.timing_advance_deg >= 50.0 and frame.rpm >= 1500.0:
-            prev_adv = self.prev_frame.timing_advance_deg if self.prev_frame else 0.0
-            return (
-                "TRIGGER_H_PHANTOM_CLOSED_THROTTLE",
-                f"Ignition advance jumped out of calibrated range ({prev_adv:.1f}deg -> "
-                f"{frame.timing_advance_deg:.1f}deg BTDC) while throttle was open at "
-                f"{frame.tps:.1f}% and engine was at {frame.rpm:.0f} RPM. ECU acted on a "
-                f"throttle-closed input that the throttle position did not support.",
-            )
+        # --- Trigger H: Throttle signal dropout during a roll-on ----------------
+        # THE signature, and the only one that survived falsification against the
+        # 17 Sep logs. Within one poll cycle the throttle reading dips well below
+        # BOTH the sample before it and the sample after it, while the previous
+        # cycle was open throughout and the rider keeps the throttle open after.
+        #
+        # Why this shape and not something simpler:
+        #  - A rider moving the throttle produces a MONOTONIC ramp across the
+        #    cycle. It cannot produce an interior dip bracketed by open readings.
+        #  - A clutchless upshift requires CLOSING the throttle, so it shows up as
+        #    a ramp down followed by a ramp up across separate cycles, not as a
+        #    dip inside one cycle during a roll-on.
+        #  - Earlier versions of this trigger used "advance >= 50 deg while TPS
+        #    reads open", which fired on ordinary throttle closures: the closure
+        #    lands mid-cycle so the frame's TPS still averages open while the ECU
+        #    has correctly entered overrun fuel cut. 60 deg BTDC is the NORMAL
+        #    deceleration state on this ECU, not a fault. That version produced
+        #    mostly false positives and has been removed.
+        if self._running_fast_enough(frame) and len(frame.tps_samples) >= 3:
+            v = frame.tps_samples
+            lo = min(v)
+            j = v.index(lo)
+            # The dip must be interior: bracketed by its own samples on both sides.
+            if 0 < j < len(v) - 1:
+                before, after = max(v[:j]), max(v[j + 1:])
+                bracket = min(before, after)
+                prev_open = (
+                    self.prev_frame is not None
+                    and self.prev_frame.tps_samples
+                    and min(self.prev_frame.tps_samples) >= 10.0
+                )
+                if (
+                    bracket >= 15.0
+                    and lo <= bracket - 15.0
+                    and prev_open
+                ):
+                    return (
+                        "TRIGGER_H_THROTTLE_DROPOUT",
+                        f"Throttle signal dipped to {lo:.1f}% mid-cycle while bracketed by "
+                        f"{before:.1f}% and {after:.1f}%, with the previous cycle open "
+                        f"throughout, at {frame.rpm:.0f} RPM. Samples: "
+                        f"{' '.join('%.1f' % x for x in v)}. No throttle movement or "
+                        f"gearchange can produce this shape.",
+                    )
 
-        # --- Trigger I: Throttle Signal Dropout (V-shaped TPS collapse) ---
-        # Within a single poll cycle TPS is sampled several times; a large spread
-        # between the min and max of those samples while the rider holds a steady
-        # open throttle is a signal dropout, not a real throttle movement -- no
-        # human closes and reopens the throttle that fast.
+        # --- Trigger I: Throttle signal at the closed stop while open either side --
+        # Weaker than H but catches a dropout that straddles a cycle boundary, so
+        # the dip is truncated and no longer looks interior. Requires the reading
+        # to reach the closed-throttle stop, and both neighbouring FRAMES to be
+        # well open, so a genuine closure (which stays shut for several cycles)
+        # cannot qualify.
         if (
-            frame.tps_sample_count >= 2
-            and frame.rpm >= 1500.0
-            and frame.tps_max_cycle >= 12.0
-            and (frame.tps_max_cycle - frame.tps_min_cycle) >= 12.0
+            self._running_fast_enough(frame)
+            and frame.tps_min_cycle <= 5.0
+            and frame.tps_max_cycle >= 15.0
+            and self.prev_frame is not None
+            and self.prev_frame.tps >= 15.0
         ):
-            return (
-                "TRIGGER_I_TPS_DROPOUT",
-                f"Throttle signal collapsed within one poll cycle: {frame.tps_max_cycle:.1f}% -> "
-                f"{frame.tps_min_cycle:.1f}% across {frame.tps_sample_count} samples at "
-                f"{frame.rpm:.0f} RPM. Too fast to be a real throttle movement.",
-            )
+            self._pending_dropout = frame
+        elif getattr(self, "_pending_dropout", None) is not None:
+            pending = self._pending_dropout
+            self._pending_dropout = None
+            if frame.tps >= 15.0 and (frame.timestamp - pending.timestamp) <= 1.5:
+                return (
+                    "TRIGGER_I_THROTTLE_FLOOR_HIT",
+                    f"Throttle signal reached the closed stop "
+                    f"({pending.tps_min_cycle:.1f}%) at {pending.rpm:.0f} RPM while open "
+                    f"before ({self.prev_frame.tps:.1f}%) and after ({frame.tps:.1f}%). "
+                    f"Samples: {' '.join('%.1f' % x for x in pending.tps_samples)}",
+                )
 
         # --- Trigger J: Throttle A / Throttle B disagreement ---
-        # Only fires on bikes that report a second throttle sensor. If the two
-        # disagree sharply, one of the two signals is being corrupted, which
-        # isolates the fault to that sensor's own wiring rather than a shared
-        # supply or ground.
+        # Only active on bikes that report a second throttle sensor. This ECU does
+        # not (PID 0x47 is absent from its support bitmask), so it never fires
+        # here; it is kept for other Sagem/Keihin ECUs that do, where it would
+        # isolate a fault to one sensor's wiring rather than a shared supply.
         if (
             frame.has_optional("throttle_b_pct")
             and frame.rpm >= 1500.0

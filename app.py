@@ -164,6 +164,17 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--focus",
+        choices=["tps", "rpm", "advance"],
+        default=None,
+        help=(
+            "Poll ONE signal as fast as the K-line allows (~13 Hz) and log nothing "
+            "else. Intended for stationary wiggle-testing: --focus tps turns the "
+            "recorder into a high-rate throttle-signal meter, far more sensitive "
+            "than a multimeter for catching an intermittent contact."
+        ),
+    )
+    parser.add_argument(
         "--no-pid-discovery",
         action="store_true",
         help="Skip the Mode 01 PID support scan at connect and poll the legacy fixed set",
@@ -359,6 +370,13 @@ class SagemDiagnosticsApp:
         include PIDs the ECU actually advertised at connect time, so no budget is
         wasted on PIDs that will never answer.
         """
+        focus = getattr(self.args, "focus", None)
+        if focus:
+            # Single-signal mode: one query per cycle, so the cycle rate IS the
+            # signal rate. Nothing else is polled, including DTCs and the MIL.
+            pid, exp = {"tps": (0x11, 7), "rpm": (0x0C, 8), "advance": (0x0E, 7)}[focus]
+            return [(0x01, pid, exp)]
+
         oversample = max(1, int(getattr(self.args, "tps_oversample", 2)))
         high = [(0x01, 0x0C, 8), (0x01, 0x0E, 7)]  # RPM, ignition advance
         schedule: List[tuple] = []
@@ -376,6 +394,9 @@ class SagemDiagnosticsApp:
         lamp flash is seen within ~300ms), otherwise the next supported PID or
         the DTC sweep.
         """
+        if getattr(self.args, "focus", None):
+            return []
+
         if self.total_frames % 2 == 0:
             return [(0x01, 0x01, 10)]
 

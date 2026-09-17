@@ -128,22 +128,18 @@ sub-100ms dropout was only caught when it happened to straddle the sample.
 
 Evaluated in this order; the first match wins.
 
-- **Trigger H (Phantom Closed Throttle)** — *highest confidence*:
-  Ignition advance jumps to $\ge 50°$ BTDC while TPS still reads $\ge 15\%$ open
-  above 1,500 RPM. Decoding this bike's own calibration (section 5b) shows its
-  ignition table tops out at **26**, so ~60° is not a value the ignition map can
-  produce — it is an out-of-range state the ECU enters when it stops firing
-  normally. The ECU briefly believed the throttle slammed shut and cut fuel. This cannot be an upshift or a rider
-  blip, because the ECU's own throttle reading says the throttle is open in the
-  same frame. RPM collapse, roll-on bog and high-load cut are all downstream
-  consequences of this.
-- **Trigger I (Throttle Signal Dropout)**:
-  TPS collapses by $\ge 12$ percentage points and recovers within a single poll
-  cycle. Too fast to be a real throttle movement.
-- **Trigger J (Throttle Sensor Disagreement)**:
-  Sensors A and B differ by $\ge 15\%$. Only active on ECUs that report a second
-  throttle sensor; isolates a fault to one sensor's wiring rather than a shared
-  supply or ground.
+- **Trigger H (Throttle Signal Dropout)** — *the only signature that survived
+  falsification*: inside one poll cycle the throttle reading dips at least 15
+  points below **both** the sample before it and the sample after it, while the
+  previous cycle was open throughout. A rider moving the throttle produces a
+  monotonic ramp; a clutchless upshift requires *closing* the throttle. Neither
+  can produce an interior dip during a roll-on.
+- **Trigger I (Throttle Floor Hit)**: the reading reaches the closed stop with
+  open readings in the frames either side — the same fault caught when the dip
+  straddles a cycle boundary and is no longer interior.
+- **Trigger J (Throttle Sensor Disagreement)**: sensors A and B differ by
+  $\ge 15\%$. This ECU reports only one throttle sensor, so it never fires here;
+  kept for other Sagem/Keihin ECUs.
 - **Trigger D (Constant TPS + RPM Drop / Cruising Stutter)**:
   RPM drops $\ge 140$ RPM while throttle is held within $2.5\%$ above 1,800 RPM.
 - **Trigger F (High-Load Power Cut)**:
@@ -234,13 +230,14 @@ shape of a normal ignition map. The table set for this ECU, from TuneECU's
 Warmup**; only the ignition table and its axis have been decoded and checked, and
 `CAPONORD_KNOWN` lists exactly those rather than guessing at the rest.
 
-**This corrects an earlier reading of the fault.** The ~60° BTDC the ECU reports
-during a cut was described as the "closed-throttle / overrun ignition map". It is
-not: this calibration tops out at **26**, so 60 is not a value the ignition map
-can produce at all. It is an out-of-range state the ECU enters when it stops
-firing normally. The conclusion is unchanged and if anything firmer — the ECU
-enters a state its own calibration cannot express, at a moment when its own
-throttle reading says the throttle is open.
+**Note on the 60° BTDC reading.** This calibration tops out at **26**, so the
+~60° the ECU reports is not a value the ignition map can produce — it is the
+overrun fuel-cut state. That does **not** make it a fault marker: it is the
+ECU's normal deceleration state and occurs every time the throttle is genuinely
+closed. An earlier version of Trigger H fired on "advance ≥ 50° while TPS reads
+open" and was almost all false positives, because a closure landing mid-cycle
+leaves the frame's throttle average still open. That trigger has been removed;
+see `test_overrun_advance_alone_is_not_a_fault`.
 
 `find_tables()` remains for exploring maps from ECUs not in the catalogue. The
 generic axis breakpoints are included as `DEF_REV` (32 rpm points, 800–12000),
@@ -329,6 +326,11 @@ python app.py --port auto --web --tps-oversample 4
 
 # Skip PID discovery and poll the legacy fixed PID set (diagnostic escape hatch)
 python app.py --port COM3 --no-pid-discovery
+
+# Stationary wiggle-testing: poll ONLY the throttle, at ~13 Hz. Nothing else is
+# read, and the RPM gate on the throttle triggers disables itself, so this works
+# with the engine off and the ignition on. See GARAGE_TESTS.md.
+python app.py --port auto --web --focus tps
 ```
 
 At connect the log lists exactly which signals this ECU will provide, e.g.:

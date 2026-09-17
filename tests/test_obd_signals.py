@@ -120,37 +120,102 @@ def test_tps_oversampling_records_min_and_max():
 # Triggers
 # --------------------------------------------------------------------------
 
-def test_trigger_h_fires_on_overrun_timing_at_open_throttle(tmp_path):
-    """The signature: ECU runs its closed-throttle ignition map while TPS says open."""
-    rec = FlightRecorder(captures_dir=str(tmp_path))
-    rec.feed_frame(_frame(timestamp=1000.0, timing_advance_deg=27.0))
-    result = rec._check_triggers(_frame(timestamp=1000.3, tps=35.0, timing_advance_deg=60.0))
+def _roll_on(rec, t, samples, prev=(28.0, 28.0, 28.0, 28.0), **kw):
+    """Feed a previous open cycle then the cycle under test, as a roll-on would."""
+    rec.feed_frame(_frame(timestamp=t, tps=prev[-1], tps_samples=list(prev),
+                          tps_min_cycle=min(prev), tps_max_cycle=max(prev),
+                          tps_sample_count=len(prev)))
+    f = _frame(timestamp=t + 0.5, tps=samples[-1], tps_samples=list(samples),
+               tps_min_cycle=min(samples), tps_max_cycle=max(samples),
+               tps_sample_count=len(samples), **kw)
+    return rec._check_triggers(f)
 
+
+def test_trigger_h_fires_on_interior_dip_during_roll_on(tmp_path):
+    """
+    The surviving signature: the reading dips below both its neighbours inside one
+    cycle while the previous cycle was open throughout. Taken from the real event
+    at t=432.08, where the throttle was held at 27.8% and the signal went to 3.5%
+    and back to 28.6% inside 244ms.
+    """
+    rec = FlightRecorder(captures_dir=str(tmp_path))
+    result = _roll_on(rec, 1000.0, [28.6, 3.5, 20.4, 28.6],
+                      prev=(27.5, 27.8, 27.8, 27.8))
     assert result is not None
-    assert result[0] == "TRIGGER_H_PHANTOM_CLOSED_THROTTLE"
+    assert result[0] == "TRIGGER_H_THROTTLE_DROPOUT"
 
 
-def test_trigger_h_ignores_overrun_timing_at_closed_throttle(tmp_path):
-    """Advance of 60 deg on a genuinely shut throttle is normal overrun, not a fault."""
+def test_trigger_h_ignores_a_rider_closing_the_throttle(tmp_path):
+    """A monotonic ramp is throttle movement. Nothing else can be concluded."""
     rec = FlightRecorder(captures_dir=str(tmp_path))
-    assert rec._check_triggers(_frame(tps=3.1, timing_advance_deg=60.0)) is None
+    assert _roll_on(rec, 2000.0, [44.7, 30.1, 12.0, 3.1],
+                    prev=(50.6, 51.0, 51.0, 50.6)) is None
 
 
-def test_trigger_i_fires_on_within_cycle_throttle_collapse(tmp_path):
+def test_trigger_h_ignores_a_sustained_closure(tmp_path):
+    """Throttle shut and staying shut is deceleration, not a dropout."""
     rec = FlightRecorder(captures_dir=str(tmp_path))
-    result = rec._check_triggers(_frame(
-        tps=45.0, tps_min_cycle=3.1, tps_max_cycle=45.0, tps_sample_count=3,
-    ))
+    assert _roll_on(rec, 3000.0, [3.1, 3.1, 3.1, 3.1],
+                    prev=(3.1, 3.1, 3.1, 3.1)) is None
+
+
+def test_overrun_advance_alone_is_not_a_fault(tmp_path):
+    """
+    Regression test for a falsified trigger. An earlier version fired on
+    "advance >= 50 deg while TPS reads open", which caught ordinary throttle
+    closures: the closure lands mid-cycle so the frame still averages open while
+    the ECU has correctly entered overrun fuel cut. 60 deg BTDC is this ECU's
+    normal deceleration state, not an anomaly.
+    """
+    rec = FlightRecorder(captures_dir=str(tmp_path))
+    assert _roll_on(rec, 4000.0, [44.7, 3.1, 3.1, 3.1],
+                    prev=(50.6, 51.0, 51.0, 50.6),
+                    timing_advance_deg=60.0) is None
+
+
+def test_trigger_i_catches_a_dropout_across_a_cycle_boundary(tmp_path):
+    """
+    When the dip straddles the cycle boundary it is no longer interior, so H
+    cannot see it. I confirms on the following frame that the throttle reopened,
+    which a genuine closure would not do.
+    """
+    rec = FlightRecorder(captures_dir=str(tmp_path))
+    rec.feed_frame(_frame(timestamp=10.0, tps=30.0, tps_samples=[30.0] * 4,
+                          tps_min_cycle=30.0, tps_max_cycle=30.0, tps_sample_count=4))
+    rec.feed_frame(_frame(timestamp=10.5, tps=3.1, tps_samples=[25.0, 3.1, 3.1, 3.1],
+                          tps_min_cycle=3.1, tps_max_cycle=25.0, tps_sample_count=4))
+    result = rec._check_triggers(
+        _frame(timestamp=11.0, tps=32.0, tps_samples=[32.0] * 4,
+               tps_min_cycle=32.0, tps_max_cycle=32.0, tps_sample_count=4))
     assert result is not None
-    assert result[0] == "TRIGGER_I_TPS_DROPOUT"
+    assert result[0] == "TRIGGER_I_THROTTLE_FLOOR_HIT"
 
 
-def test_trigger_i_ignores_ordinary_throttle_movement(tmp_path):
-    """A rider opening the throttle smoothly must not look like a dropout."""
+def test_trigger_i_ignores_a_closure_that_stays_shut(tmp_path):
     rec = FlightRecorder(captures_dir=str(tmp_path))
-    assert rec._check_triggers(_frame(
-        tps=30.0, tps_min_cycle=26.0, tps_max_cycle=30.0, tps_sample_count=3,
-    )) is None
+    rec.feed_frame(_frame(timestamp=20.0, tps=30.0, tps_samples=[30.0] * 4,
+                          tps_min_cycle=30.0, tps_max_cycle=30.0, tps_sample_count=4))
+    rec.feed_frame(_frame(timestamp=20.5, tps=3.1, tps_samples=[25.0, 3.1, 3.1, 3.1],
+                          tps_min_cycle=3.1, tps_max_cycle=25.0, tps_sample_count=4))
+    # Still shut on the next frame: the rider simply rolled off.
+    assert rec._check_triggers(
+        _frame(timestamp=21.0, tps=3.1, tps_samples=[3.1] * 4,
+               tps_min_cycle=3.1, tps_max_cycle=3.1, tps_sample_count=4)) is None
+
+
+def test_rpm_gate_skips_itself_when_rpm_is_not_polled(tmp_path):
+    """--focus tps polls only the throttle, so the RPM gate must not disable H."""
+    rec = FlightRecorder(captures_dir=str(tmp_path))
+    sources = {"tps": "measured", "rpm": "unsupported"}
+    rec.feed_frame(_frame(timestamp=30.0, rpm=0.0, tps=28.0, tps_samples=[28.0] * 4,
+                          tps_min_cycle=28.0, tps_max_cycle=28.0, tps_sample_count=4,
+                          signal_sources=sources))
+    result = rec._check_triggers(
+        _frame(timestamp=30.1, rpm=0.0, tps=28.6, tps_samples=[28.6, 3.5, 20.4, 28.6],
+               tps_min_cycle=3.5, tps_max_cycle=28.6, tps_sample_count=4,
+               signal_sources=sources))
+    assert result is not None
+    assert result[0] == "TRIGGER_H_THROTTLE_DROPOUT"
 
 
 def test_trigger_j_needs_a_real_second_sensor(tmp_path):
@@ -214,8 +279,11 @@ def test_post_trigger_window_is_time_based(tmp_path):
     """
     rec = FlightRecorder(captures_dir=str(tmp_path), post_trigger_sec=2.0)
     t = 2000.0
-    rec.feed_frame(_frame(timestamp=t, timing_advance_deg=27.0))
-    rec.feed_frame(_frame(timestamp=t + 0.3, tps=35.0, timing_advance_deg=60.0))
+    rec.feed_frame(_frame(timestamp=t, tps=28.0, tps_samples=[28.0] * 4,
+                          tps_min_cycle=28.0, tps_max_cycle=28.0, tps_sample_count=4))
+    rec.feed_frame(_frame(timestamp=t + 0.3, tps=28.6,
+                          tps_samples=[28.6, 3.5, 20.4, 28.6],
+                          tps_min_cycle=3.5, tps_max_cycle=28.6, tps_sample_count=4))
     assert rec.is_capturing
 
     for i in range(1, 9):  # 2.4s of post-trigger frames at ~3 Hz
