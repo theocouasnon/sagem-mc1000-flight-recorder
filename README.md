@@ -257,6 +257,15 @@ python app.py --web --web-port 8080
 
 ## 7. Usage & CLI Options
 
+### Install
+
+```bash
+pip install -r requirements.txt
+```
+
+Add `-r requirements-dev.txt` for the test suite and the tools under `tools/`.
+
+
 ### Running with Physical Hardware
 ```bash
 # Web UI mode (Recommended for test rides with phone on tank bag)
@@ -321,5 +330,10 @@ All 54 test cases pass across protocol, serial echo stripping, telemetry scaling
 - `tests/test_kwp2000.py`: Checksum calculation, frame formatting, positive/negative response parsing, error detection.
 - `tests/test_sagem_mc1000.py`: DTC mapping, telemetry formula scaling, discrete bitfield decoding.
 - `tests/test_flight_recorder.py`: buffer mechanics, Trigger A, Trigger B, Trigger C, pre/post capture windows, and CSV/JSON output.
+See `tools/README.md` for the analysis and reverse-engineering scripts, including
+`tools/analysis/replay_session.py`, which replays a recorded ride through the live
+trigger logic — that is how the trigger changes were validated against real rides
+rather than only synthetic frames.
+
 - `tests/test_obd_signals.py`: Mode 01 PID table decoding, signal provenance (unsupported signals must stay blank, never be synthesised), TPS oversampling min/max, Triggers H/I/J, gearchange suppression, and time-based capture windows.
 - `tests/test_serial_and_mock.py`: Echo stripping, fast-init pulse sequence, slow-init handshake, and full multi-service polling cycle.

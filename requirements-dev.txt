@@ -1,0 +1,12 @@
+# Development and analysis dependencies.
+#   pip install -r requirements.txt -r requirements-dev.txt
+-r requirements.txt
+
+pytest>=8.0
+httpx>=0.27          # FastAPI TestClient
+
+# Reverse-engineering tools under tools/reverse_engineering/. Only needed to
+# re-derive the TuneECU findings from the binaries; the results are already
+# committed in tuneecu_map.py and sagem_protocol.py.
+dnfile>=0.15
+dncil>=1.0

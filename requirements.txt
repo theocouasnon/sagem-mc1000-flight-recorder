@@ -1,0 +1,10 @@
+# Runtime dependencies for the flight recorder.
+#   pip install -r requirements.txt
+pyserial>=3.5
+rich>=13.0
+
+# Web dashboard (--web). Optional if you only use the terminal dashboard,
+# but app.py imports web_server lazily only when --web is passed.
+fastapi>=0.110
+uvicorn>=0.27
+websockets>=12.0
