@@ -53,8 +53,8 @@ Source: `captures/session_20260917_171559.csv` (377 s) and
 
 | # | Observation | Conf |
 |---|---|---|
-| L1 | **13 cut events.** RPM falls at least 8% within 1.5 s while the throttle stays open (>=6%) and does not fall more than 5 points. Drops 8.8-19.9%, durations 0.46-1.19 s. | 5/5 |
-| L2 | **9 of 13 events carry a throttle-signal dip >=3 points. 0 of 202 matched controls do.** Controls drawn at the same RPM and throttle band with no RPM loss. Largest dip in any control: 1.2 points. | 5/5 |
+| L1 | ~~**13 cut events.**~~ RPM falls at least 8% within 1.5 s while the throttle stays open (>=6%) and does not fall more than 5 points. **The count is not trustworthy — see L16 and L20.** A near-identical definition fires 21 and 29 times on rides with zero cuts. What these 13 are is unknown; most are probably gearshifts. | 2/5 |
+| L2 | **9 of 13 events carry a throttle-signal dip >=3 points. 0 of 202 matched controls do.** Controls drawn at the same RPM and throttle band with no RPM loss. Largest dip in any control: 1.2 points. **Qualified by L17:** the events it counts come from L1's untrustworthy definition. The control arm is what still carries weight — whatever those 202 windows were, they did not dip. Needs re-running against a clean ride in mode B. | 3/5 |
 | L3 | **The throttle signal never dips without the engine losing RPM** — not once in 202 control windows. | 4/5 |
 | L4 | Event dip depths: 27.4, 26.2, 21.2, 12.2, 8.7, 7.8, 7.1, 6.3, 5.1, 0.7, 0.4, 0.4, 0.0 points. | 5/5 |
 | L5 | 6 of 13 events show the ECU in overrun fuel-cut state (advance >=50 deg BTDC) while the throttle still reads open. | 4/5 |
