@@ -879,3 +879,14 @@
 2026-09-17 17:43:49,736 [INFO] sagem.serial: Fast-Init successful! ECU Key Bytes: ea8f
 2026-09-17 17:43:53,193 [WARNING] sagem.recorder: >>> FLIGHT RECORDER TRIGGERED: TRIGGER_E_EFI_LIGHT_ON - Sagem MC1000 commanded EFI warning light ON (MIL active) at 4078 RPM, TPS 28.2%
 2026-09-17 17:43:54,754 [INFO] sagem.serial: Closed K-Line serial port COM3
+2026-09-20 11:25:41,042 [INFO] sagem: Connecting to Sagem MC1000 on MOCK_ECU @ 10400 baud...
+2026-09-20 11:25:41,042 [INFO] sagem.serial: Initiating ISO 14230 Fast-Init on COM3...
+2026-09-20 11:25:41,094 [INFO] sagem.serial: Fast-Init successful! ECU Key Bytes: ea8f
+2026-09-20 11:25:44,554 [WARNING] sagem.recorder: >>> FLIGHT RECORDER TRIGGERED: TRIGGER_E_EFI_LIGHT_ON - Sagem MC1000 commanded EFI warning light ON (MIL active) at 4088 RPM, TPS 28.2%
+2026-09-20 11:25:47,625 [INFO] sagem.recorder: Captured flight recorder event saved: capture_20260920_112544_553_trigger_e_efi_light_on.csv, capture_20260920_112544_553_trigger_e_efi_light_on.json, capture_20260920_112544_553_trigger_e_efi_light_on_report.txt
+2026-09-20 11:25:47,628 [INFO] sagem: Blackbox capture #1 saved: capture_20260920_112544_553_trigger_e_efi_light_on.csv [TRIGGER_E_EFI_LIGHT_ON | RPM: 4088, TPS: 28.2%, Adv: 30.6°, Dwell: 2.40ms]
+2026-09-20 11:25:49,160 [INFO] sagem.serial: Closed K-Line serial port COM3
+2026-09-20 11:30:11,651 [INFO] sagem: Connecting to Sagem MC1000 on MOCK_ECU @ 10400 baud...
+2026-09-20 11:30:11,651 [INFO] sagem.serial: Initiating ISO 14230 Fast-Init on COM3...
+2026-09-20 11:30:11,703 [INFO] sagem.serial: Fast-Init successful! ECU Key Bytes: ea8f
+2026-09-20 11:30:11,724 [INFO] sagem.serial: Closed K-Line serial port COM3

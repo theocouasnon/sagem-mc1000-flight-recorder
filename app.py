@@ -193,6 +193,18 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--fault-hunt",
+        action="store_true",
+        help=(
+            "Hunt the EFI lamp instead of the throttle trace. Polls the MIL bit, "
+            "the throttle and the DTC sweep (Mode 07 and Mode 03 alternating) "
+            "every cycle, about 4.9 Hz each, and nothing else. The rider reports "
+            "the lamp lighting on every event while the lamp bit has never once "
+            "been caught set; at ~1 Hz that was expected. This is the mode that "
+            "settles whether the dash lamp is the OBD MIL bit at all."
+        ),
+    )
+    parser.add_argument(
         "--poll",
         type=str,
         default=None,
@@ -203,6 +215,28 @@ def parse_args() -> argparse.Namespace:
             "whether a throttle dip is accompanied by movement on other "
             "5V-referenced sensors, which separates a shared supply or ground "
             "fault from a fault in the throttle circuit alone."
+        ),
+    )
+    parser.add_argument(
+        "--bench",
+        action="store_true",
+        help=(
+            "Stationary bench session: run every check that needs the bike "
+            "connected but not moving, then exit. Confirms PID 0x01 actually "
+            "answers, measures the real cost of every query type instead of "
+            "assuming 68 ms, and sweeps the service 0x22 identifier space for "
+            "anything the ECU answers that TuneECU does not display -- a live "
+            "fault word being the thing worth finding. Read-only throughout."
+        ),
+    )
+    parser.add_argument(
+        "--bench-sweep",
+        type=str,
+        default="0x0000-0x00FF,0x0400-0x04FF",
+        help=(
+            "Identifier ranges for --bench to sweep, comma separated. The "
+            "default covers the two blocks TuneECU's own tables draw from. "
+            "Each identifier costs about 70 ms, so 512 of them is ~36 s."
         ),
     )
     parser.add_argument(
@@ -463,6 +497,186 @@ class SagemDiagnosticsApp:
             return False
         return True
 
+    # ------------------------------------------------------------------
+    # Bench session
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_ranges(spec: str):
+        """'0x00-0x0F,0x40' -> [0,1,...,15,64]. Raises SystemExit on nonsense."""
+        out = []
+        for part in (spec or "").split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                if "-" in part:
+                    lo, hi = (int(x, 0) for x in part.split("-", 1))
+                    if hi < lo:
+                        raise ValueError("descending range")
+                    out.extend(range(lo, hi + 1))
+                else:
+                    out.append(int(part, 0))
+            except ValueError as exc:
+                raise SystemExit("bad --bench-sweep range %r: %s" % (part, exc))
+        seen, uniq = set(), []
+        for i in out:
+            if not 0 <= i <= 0xFFFF:
+                raise SystemExit("identifier 0x%X out of range" % i)
+            if i not in seen:
+                seen.add(i)
+                uniq.append(i)
+        return uniq
+
+    def _sweep_one(self, ident: int):
+        """
+        Read one service 0x22 identifier with no prior knowledge of it.
+
+        decode_response() deliberately returns None for an identifier it does not
+        know, which is right for the probe and wrong here -- the unknown ones are
+        the whole point of a sweep. So this parses the frame directly and checks
+        the ECU echoed back the identifier we asked for, which is what separates
+        a real answer from a stale frame left in the buffer.
+
+        Returns the raw 16-bit word, the string "refused", or None for silence.
+        """
+        req = bytes([0x22, (ident >> 8) & 0x7F, ident & 0xFF])
+        resp = self.bus.query_service(req, expected_len=9, timeout=0.07)
+        if len(resp) < 7:
+            return None
+        if resp[3] == 0x7F:
+            return "refused"
+        if resp[3] != 0x62 or len(resp) < 9:
+            return None
+        echoed = (resp[4] << 8) | resp[5]
+        if echoed != (ident & 0x7FFF):
+            self.logger.debug(
+                "sweep 0x%04X: echoed identifier 0x%04X, ignoring", ident, echoed
+            )
+            return None
+        return (resp[6] << 8) | resp[7]
+
+    def _time_query(self, mode, pid, expected_len, repeats=8):
+        """Median wall-clock cost of one query, and whether it answered."""
+        times, last = [], b""
+        for _ in range(repeats):
+            t0 = time.time()
+            last = self.bus.query_iso9141(
+                mode=mode, pid=pid, expected_len=expected_len, timeout=0.06
+            )
+            times.append((time.time() - t0) * 1000.0)
+        times.sort()
+        return times[len(times) // 2], last
+
+    def _bench(self) -> None:
+        """
+        Every check worth doing with the bike connected and stationary.
+
+        Three questions, in order of how much they would change the diagnosis:
+        does PID 0x01 answer at all (without which "the lamp never lit" means
+        nothing), what does each query really cost, and is there an identifier
+        the ECU answers that TuneECU never displays.
+        """
+        if not self._require_iso9141("--bench"):
+            return
+
+        c = self.console
+        c.print("")
+        c.print("[bold]Bench session[/bold]  (read-only; nothing is written to the ECU)")
+        c.print("")
+
+        # -- 1. Does the lamp PID answer? ------------------------------------
+        c.print("[bold]1. MIL / PID 0x01[/bold]")
+        ms, resp = self._time_query(0x01, 0x01, 10)
+        if not resp:
+            c.print(
+                "   [bold red]PID 0x01 did not answer.[/bold red] Every "
+                "'the lamp bit was never set' result in this investigation "
+                "is void -- the query was never being answered."
+            )
+            c.print("")
+        else:
+            byte_a = resp[5] if len(resp) >= 6 else 0
+            c.print("   raw %s   (%.0f ms)" % (resp.hex(), ms))
+            c.print(
+                "   byte A = 0x%02X -> lamp bit %s, DTC count %d"
+                % (byte_a, "SET" if byte_a & 0x80 else "clear", byte_a & 0x7F)
+            )
+            c.print(
+                "   [dim]PID 0x01 answers. So a lamp the rider sees on every "
+                "event while this bit stays clear means the dash lamp is not "
+                "this bit.[/dim]"
+            )
+            c.print("")
+
+        # -- 2. What does each query actually cost? --------------------------
+        c.print("[bold]2. Measured query cost[/bold]  [dim](median of 8)[/dim]")
+        probes = [
+            ("tps        PID 0x11", 0x01, 0x11, 7),
+            ("rpm        PID 0x0C", 0x01, 0x0C, 8),
+            ("advance    PID 0x0E", 0x01, 0x0E, 7),
+            ("mil        PID 0x01", 0x01, 0x01, 10),
+            ("stored DTC mode 03 (len 11)", 0x03, None, 11),
+            ("stored DTC mode 03 (len 12)", 0x03, None, 12),
+            ("pending    mode 07 (len 11)", 0x07, None, 11),
+        ]
+        total = 0.0
+        for label, mode, pid, exp in probes:
+            ms, resp = self._time_query(mode, pid, exp)
+            got = "%d bytes" % len(resp) if resp else "[red]no answer[/red]"
+            c.print("   %-30s %6.1f ms   %s" % (label, ms, got))
+            if "len 12" not in label:
+                total += ms
+        if total:
+            c.print(
+                "   [dim]Budget implied by these: %.1f queries/sec across the "
+                "set above.[/dim]" % (1000.0 * len(probes[:-2]) / max(total, 1.0))
+            )
+            c.print("")
+
+        # -- 3. Identifier sweep --------------------------------------------
+        idents = self._parse_ranges(getattr(self.args, "bench_sweep", "") or "")
+        known = {sig.ident for sig in SAGEM_SIGNALS}
+        c.print(
+            "[bold]3. Service 0x22 identifier sweep[/bold]  "
+            "[dim]%d identifiers, ~%.0f s[/dim]" % (len(idents), len(idents) * 0.07)
+        )
+        answered, refused = [], 0
+        for n, ident in enumerate(idents):
+            if not self.running:
+                c.print("   [yellow]interrupted[/yellow]")
+                break
+            hit = self._sweep_one(ident)
+            if hit is None:
+                continue
+            if hit == "refused":
+                refused += 1
+                continue
+            raw = hit
+            answered.append((ident, raw))
+            tag = "[green]known[/green]" if ident in known else "[bold yellow]NEW[/bold yellow]"
+            c.print("   0x%04X  raw 0x%04X  %s" % (ident, raw, tag))
+            if n % 64 == 0:
+                time.sleep(0.005)
+
+        novel = [(i, r) for i, r in answered if i not in known]
+        c.print("")
+        c.print(
+            "   [bold]%d answered (%d not in TuneECU's tables), %d refused, "
+            "%d silent[/bold]"
+            % (len(answered), len(novel), refused, len(idents) - len(answered) - refused)
+        )
+        if novel:
+            c.print("")
+            c.print(
+                "   [dim]Identifiers TuneECU never displays are the interesting "
+                "ones. Re-run with the engine warm, and again while a helper "
+                "works the throttle: anything that changes with engine state is "
+                "a live channel, and a word that changes only when the lamp "
+                "lights is the fault register.[/dim]"
+            )
+        c.print("")
+
     def _sagem_probe(self) -> None:
         """
         Walk every Sagem-native identifier once and report what came back.
@@ -644,6 +858,11 @@ class SagemDiagnosticsApp:
                 out.append((0x01, pid, 5 + nbytes + 1))
             return out
 
+        if getattr(self.args, "fault_hunt", False):
+            # Throttle only in the fast schedule; the lamp and the DTC sweep ride
+            # in the slow slot, which runs every cycle too.
+            return [(0x01, 0x11, 7)]
+
         if getattr(self.args, "fast", False):
             # Everything that matters, every cycle, nothing else. The K-line
             # allows roughly 14.7 queries per second total (~68ms each, set by
@@ -680,6 +899,16 @@ class SagemDiagnosticsApp:
         if getattr(self.args, "focus", None) or getattr(self.args, "poll", None):
             return []
 
+
+        if getattr(self.args, "fault_hunt", False):
+            # Lamp every cycle, and a DTC read every cycle alternating between
+            # pending (Mode 07) and stored (Mode 03). If the ECU flags the fault
+            # as pending before it matures into a stored code -- which is what an
+            # event too brief to set the MIL would look like -- this is where it
+            # appears, and 6-second sampling would have missed it every time.
+            dtc_mode = 0x07 if self.total_frames % 2 == 0 else 0x03
+            return [(0x01, 0x01, 10), (dtc_mode, None, 11)]
+
         if getattr(self.args, "fast", False):
             return [(0x01, 0x01, 10)]     # MIL only, every cycle
 
@@ -700,9 +929,9 @@ class SagemDiagnosticsApp:
         slots = rotation + [("dtc_stored",), ("dtc_pending",)]
         slot = slots[self.total_frames % len(slots)]
         if slot == ("dtc_stored",):
-            queries.append((0x03, None, 12))
+            queries.append((0x03, None, 11))
         elif slot == ("dtc_pending",):
-            queries.append((0x07, None, 12))
+            queries.append((0x07, None, 11))
         else:
             pid = slot
             nbytes = OBD_PIDS[pid][1] if pid in OBD_PIDS else 1
@@ -712,24 +941,37 @@ class SagemDiagnosticsApp:
     def _run_poll_cycle(self, now_ts: float) -> None:
         """Execute one interleaved ISO 9141 poll cycle and publish the frame."""
         raw_parts: List[str] = []
+        before = self.bus.stats_snapshot()
+        t0 = time.time()
         for mode, pid, exp_len in self._build_poll_schedule() + self._slow_slot_queries():
             resp = self.bus.query_iso9141(mode=mode, pid=pid, expected_len=exp_len, timeout=0.06)
             if not resp:
                 continue
             if mode in (0x03, 0x07):
                 self.sampler.ingest_dtcs(resp)
+                raw_parts.append(f"m{mode:02x}:{resp.hex()}")
             elif pid == 0x01:
                 self.sampler.ingest_mil(resp)
-                # Keep the raw MIL frame whenever the lamp bit is set, so an EFI
-                # light event is provable from the log rather than inferred.
-                if len(resp) >= 6 and resp[5] & 0x80:
-                    raw_parts.append(f"MIL_ON:{resp.hex()}")
+                # Record the MIL reply on EVERY cycle, not only when the lamp bit
+                # is set. Logging it only when set makes "lamp never seen" and
+                # "PID 0x01 never answered" indistinguishable afterwards, which is
+                # exactly the ambiguity that stalled the 17 Sep ride analysis.
+                raw_parts.append(
+                    ("MIL_ON:" if (len(resp) >= 6 and resp[5] & 0x80) else "mil:") + resp.hex()
+                )
             else:
                 name = self.sampler.ingest(resp)
                 if name in ("rpm", "tps", "timing_advance_deg"):
                     raw_parts.append(f"{name}:{resp.hex()}")
 
-        frame = self.sampler.build_frame(timestamp=now_ts, raw_hex=" ".join(raw_parts))
+        after = self.bus.stats_snapshot()
+        comms = {k: after[k] - before[k] for k in after}
+        frame = self.sampler.build_frame(
+            timestamp=now_ts,
+            raw_hex=" ".join(raw_parts),
+            comms=comms,
+            cycle_ms=(time.time() - t0) * 1000.0,
+        )
         self.sampler.end_cycle()
         self._publish_frame(frame, now_ts)
 
@@ -872,6 +1114,12 @@ class SagemDiagnosticsApp:
 
         # The Sagem-native modes replace the frame loop entirely: they speak a
         # different service and log a different shape of data.
+        if getattr(self.args, "bench", False):
+            try:
+                self._bench()
+            finally:
+                self.stop()
+            return
         if getattr(self.args, "sagem_probe", False):
             try:
                 self._sagem_probe()

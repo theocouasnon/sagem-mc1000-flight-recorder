@@ -100,6 +100,14 @@ class KLineSerialBus:
         # Mode 01 PIDs the ECU actually answers, filled in by discover_supported_pids().
         # Empty set means "not probed yet" -- callers should not treat it as "nothing supported".
         self.supported_pids: set[int] = set()
+        # Link-health counters. A query that returns nothing used to be silently
+        # skipped, which meant a burst of failures during a cut event left no
+        # trace at all. These are cumulative; callers snapshot and diff them to
+        # get a per-cycle figure. See stats_snapshot().
+        self.stat_ok = 0          # replies that arrived and passed checksum
+        self.stat_silent = 0      # nothing, or fewer than 4 bytes, before timeout
+        self.stat_bad_csum = 0    # bytes arrived but the checksum did not match
+        self.stat_short = 0       # valid frame, but shorter than expected_len
 
     def open(self) -> None:
         """Open the serial port with 8N1 configuration."""
@@ -424,13 +432,30 @@ class KLineSerialBus:
                 time.sleep(0.001)
 
         if len(resp) < 4:
+            self.stat_silent += 1
             return bytes()
 
         if sum(resp[:-1]) & 0xFF != resp[-1]:
+            self.stat_bad_csum += 1
             logger.debug("ISO 9141 Checksum mismatch: %s", resp.hex())
             return bytes()
 
+        self.stat_ok += 1
+        if len(resp) < expected_len:
+            # Not an error: several replies are genuinely shorter than the
+            # length we ask for. Counted because it is also what a truncated
+            # frame looks like, and because each one costs a full port timeout.
+            self.stat_short += 1
         return bytes(resp)
+
+    def stats_snapshot(self) -> dict:
+        """Cumulative link-health counters, for diffing across a poll cycle."""
+        return {
+            "ok": self.stat_ok,
+            "silent": self.stat_silent,
+            "bad_csum": self.stat_bad_csum,
+            "short": self.stat_short,
+        }
 
     def query_iso9141(self, mode: int, pid: Optional[int] = None, expected_len: int = 8, timeout: float = 0.08) -> bytes:
         """Send ISO 9141 request and return validated response."""

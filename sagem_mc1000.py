@@ -176,6 +176,16 @@ class TelemetryFrame:
     runtime_sec: float = 0.0
     gear_ratio: float = 0.0           # rpm / road speed, when speed is available
 
+    # --- K-line link health for this cycle --------------------------------
+    # A query that returns nothing is skipped silently by the poll loop, so a
+    # burst of failures during a cut event used to leave no trace. If the ECU's
+    # supply sags far enough to disturb its digital side, this is where it shows
+    # up, and it costs no bus bandwidth to record.
+    comms_ok: int = 0
+    comms_silent: int = 0
+    comms_bad_csum: int = 0
+    cycle_ms: float = 0.0
+
     # Which signals came off the wire this frame, vs. carried over or never
     # supported. Anything not listed as "measured" must not be trusted as data.
     # Keys are TelemetryFrame attribute names; values are
@@ -300,6 +310,10 @@ class TelemetryFrame:
             self._csv_num("baro_kpa", self.baro_kpa, "{:.1f}"),
             self._csv_num("absolute_load_pct", self.absolute_load_pct, "{:.1f}"),
             self._csv_num("runtime_sec", self.runtime_sec, "{:.0f}"),
+            str(self.comms_ok),
+            str(self.comms_silent),
+            str(self.comms_bad_csum),
+            f"{self.cycle_ms:.0f}",
         ]
 
     # Column names for to_csv_row(), kept next to it so the two cannot drift apart.
@@ -316,6 +330,7 @@ class TelemetryFrame:
         "gear_ratio", "throttle_b_pct", "rel_throttle_pct", "o2_b1s1_volts",
         "fuel_trim_short_pct", "fuel_trim_long_pct", "fuel_system_status",
         "baro_kpa", "absolute_load_pct", "runtime_sec",
+        "comms_ok", "comms_silent", "comms_bad_csum", "cycle_ms",
     ]
 
 
@@ -832,7 +847,9 @@ class TelemetrySampler:
         if len(resp) >= 6:
             self.dtc_state["active_dtcs"] = _decode_dtc_payload(resp[4:-1])
 
-    def build_frame(self, timestamp: Optional[float] = None, raw_hex: str = "") -> TelemetryFrame:
+    def build_frame(self, timestamp: Optional[float] = None, raw_hex: str = "",
+                    comms: Optional[Dict[str, int]] = None,
+                    cycle_ms: float = 0.0) -> TelemetryFrame:
         """Produce a TelemetryFrame from everything gathered so far."""
         ts = timestamp if timestamp is not None else time.time()
         v = self.values
@@ -917,6 +934,10 @@ class TelemetrySampler:
             runtime_sec=v.get("runtime_sec", 0.0),
             gear_ratio=gear_ratio,
             signal_sources=dict(self.sources),
+            comms_ok=int((comms or {}).get("ok", 0)),
+            comms_silent=int((comms or {}).get("silent", 0)),
+            comms_bad_csum=int((comms or {}).get("bad_csum", 0)),
+            cycle_ms=cycle_ms,
         )
         return frame
 
