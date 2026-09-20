@@ -69,6 +69,20 @@ Source: `captures/session_20260917_171559.csv` (377 s) and
 | L14 | **Mode 03 has never been polled, in any log, ever.** At the code version running on 17 Sep only Mode 07 was in the rotation, roughly every 6 s. The every-cycle-MIL-plus-Mode-03 fix landed at 17:44, after both rides. So there is still no log with real stored-DTC coverage. | 5/5 |
 | L15 | Both fuel trim PIDs are dead constants: short-term reads exactly 39.1% and long-term 0.0 in every sample of every log, across ~275 polls. No O2 sensor (PID 0x14 absent), so the bike runs open-loop and these return placeholders. | 5/5 |
 
+## Facts — the 20 Sep clean rides (the first negative control)
+
+Two rides, 421 s and 402 s, **zero cuts felt by the rider**. `session_20260920_131021.csv`
+(`--poll tps,rpm,coolant_temp,air_temp`, 1 throttle sample/cycle) and
+`session_20260920_131857.csv` (mode A, 2 samples/cycle).
+
+| # | Observation | Conf |
+|---|---|---|
+| L16 | **Triggers F and G are not diagnostic.** Replaying the live triggers over the clean ride 131021 fires ~9 x TRIGGER_G_ROLL_ON_BOG and 4 x TRIGGER_F_HIGH_LOAD_CUT on a ride with no cuts at all. Faulty log2's entire trigger evidence was 7 x G, so that log contributes nothing. | 5/5 |
+| L17 | **The loose "isolated closed-throttle dropout" signature is refuted as a fault marker.** `anomaly_scan.py` — the tool that produced the L2 result — reports **7** on the clean ride 131857 against **2** on faulty log1. The clean ride has *fewer* throttle samples per cycle (2 vs 4-8), so the sampling confound runs against the finding, not for it. Inspecting them, they are throttle closes to the 3.53% floor: gearshifts. | 4/5 |
+| L18 | **Trigger H is still untested, not validated.** It fired 0 times on both clean rides — but H needs an interior dip inside one cycle, so it cannot fire with 1 or 2 samples per cycle. Neither clean ride could have produced it. Testing H needs a clean ride in mode B. | 5/5 |
+| L19 | **No condition threshold explains the clean rides.** Ride 2 reached 85 C coolant, 5806 rpm p95 and 45.9% throttle p95 — at or above 17 Sep log1, where the two H triggers fired at 72-75 C and 6066-6237 rpm. Temperature, RPM and load all overlap or are exceeded. Consistent with R2 (sporadic); argues against a simple threshold. | 4/5 |
+| L20 | No RPM-based feature separates the clean rides from the faulty ones: drop rate, recovery fraction and throttle-close depth all overlap completely. The clean rides have *more* throttle-held-open RPM losses than the faulty ones. | 4/5 |
+
 ## Facts — garage tests, 17 Sep (all clean)
 
 Performed *after* the TPS was removed and refitted — see the caveat under H4.
