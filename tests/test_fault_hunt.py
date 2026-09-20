@@ -268,3 +268,23 @@ def test_bench_say_strips_markup_for_the_file():
     app._bench_lines = []
     app._bench_say("[bold]1. MIL[/bold] raw [dim]0x00[/dim]")
     assert app._bench_lines == ["1. MIL raw 0x00"]
+
+
+def test_mode_07_is_absent_from_every_schedule():
+    """Measured 20 Sep: Mode 07 never answers on this ECU and costs a 217 ms
+    port timeout each attempt. It must not appear in any mode."""
+    for flags in ({}, {"fault_hunt": True}, {"fast": True}, {"tps_oversample": 4}):
+        app = _app(**flags)
+        app._slow_pid_rotation = [0x04, 0x05, 0x0F]
+        for frame in range(12):
+            app.total_frames = frame
+            sched = app._build_poll_schedule() + app._slow_slot_queries()
+            assert 0x07 not in [m for m, _p, _n in sched], flags
+    # and Mode 03 must still come round
+    app = _app(tps_oversample=4)
+    app._slow_pid_rotation = [0x04, 0x05, 0x0F]
+    seen = set()
+    for frame in range(12):
+        app.total_frames = frame
+        seen.update(m for m, _p, _n in app._slow_slot_queries())
+    assert 0x03 in seen

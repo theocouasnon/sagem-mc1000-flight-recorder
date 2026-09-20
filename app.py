@@ -1220,8 +1220,12 @@ class SagemDiagnosticsApp:
         # Then one rotating slot: stored DTCs, pending DTCs, or a slow PID.
         # Mode 03 (stored) was previously never polled at all -- only Mode 07
         # (pending) was. A fault the ECU latches would therefore never appear.
+        # Mode 07 is NOT in the rotation. Measured on the bike 20 Sep: this ECU
+        # never answers it, and every attempt burns a full 217 ms port timeout
+        # against the 64 ms a Mode 03 read costs. Leaving it in stalled one slot
+        # in five of the rotation for nothing.
         rotation = list(self._slow_pid_rotation)
-        slots = rotation + [("dtc_stored",), ("dtc_pending",)]
+        slots = rotation + [("dtc_stored",)]
         slot = slots[self.total_frames % len(slots)]
         if slot == ("dtc_stored",):
             queries.append((0x03, None, 11))
