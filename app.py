@@ -287,6 +287,16 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+class _Tee:
+    """Console-shaped object whose print() also lands in the bench transcript."""
+
+    def __init__(self, sink):
+        self._sink = sink
+
+    def print(self, markup: str = "") -> None:
+        self._sink(markup)
+
+
 class SagemDiagnosticsApp:
     """
     Main diagnostic application engine.
@@ -705,9 +715,11 @@ class SagemDiagnosticsApp:
             return
 
         self._bench_brief()
-        c = self.console
-        c.print("")
-        c.print("[bold]Bench session[/bold]  (read-only; nothing is written to the ECU)")
+        # Everything below goes through the transcript logger, not straight to
+        # the console. The first bench run at the bike printed all three phases
+        # to the screen and saved a transcript containing only the briefing,
+        # which made the run nearly worthless once the terminal was cleared.
+        c = _Tee(self._bench_say)
         c.print("")
 
         # -- 1. Does the lamp PID answer? ------------------------------------
@@ -745,17 +757,34 @@ class SagemDiagnosticsApp:
             ("stored DTC mode 03 (len 12)", 0x03, None, 12),
             ("pending    mode 07 (len 11)", 0x07, None, 11),
         ]
-        total = 0.0
+        answering, answering_ms = 0, 0.0
         for label, mode, pid, exp in probes:
             ms, resp = self._time_query(mode, pid, exp)
             got = "%d bytes" % len(resp) if resp else "[red]no answer[/red]"
             c.print("   %-30s %6.1f ms   %s" % (label, ms, got))
-            if "len 12" not in label:
-                total += ms
-        if total:
+            if resp:
+                # The hex matters for the DTC modes: "11 bytes" does not say
+                # whether the codes were all zero or whether we mis-parsed them.
+                if mode in (0x03, 0x07):
+                    c.print("      [dim]%s[/dim]" % resp.hex())
+                if "len 12" not in label:
+                    answering += 1
+                    answering_ms += ms
+        if answering:
+            c.print("")
             c.print(
-                "   [dim]Budget implied by these: %.1f queries/sec across the "
-                "set above.[/dim]" % (1000.0 * len(probes[:-2]) / max(total, 1.0))
+                "   [dim]Budget across the %d queries that answer: %.1f per "
+                "second (%.0f ms each).[/dim]"
+                % (answering, 1000.0 * answering / answering_ms,
+                   answering_ms / answering)
+            )
+            c.print(
+                "   [dim]A query the ECU ignores costs a full port timeout, so "
+                "polling a service[/dim]"
+            )
+            c.print(
+                "   [dim]this ECU does not implement is far more expensive than "
+                "one it does.[/dim]"
             )
             c.print("")
 
@@ -767,9 +796,37 @@ class SagemDiagnosticsApp:
             "[dim]%d identifiers, ~%.0f s[/dim]" % (len(idents), len(idents) * 0.07)
         )
         answered, refused = [], 0
+        SILENT_ABORT = 24
+        aborted = False
         for n, ident in enumerate(idents):
             if not self.running:
                 c.print("   [yellow]interrupted[/yellow]")
+                break
+            # Every silent identifier costs a full port timeout, so a sweep the
+            # ECU is ignoring entirely burns ~100 s to tell us nothing we do not
+            # already know after the first two dozen. Total silence with not one
+            # refusal is itself the finding: an ECU that implements service 0x22
+            # answers SOMETHING, even if only "identifier not supported".
+            if not answered and not refused and n >= SILENT_ABORT:
+                aborted = True
+                c.print("")
+                c.print(
+                    "   [bold yellow]Stopped after %d silent identifiers.[/bold yellow] "
+                    "Not one refusal either," % n
+                )
+                c.print(
+                    "   which means the ECU is ignoring service 0x22 altogether in "
+                    "this session"
+                )
+                c.print(
+                    "   state -- not that these identifiers are unsupported. "
+                    "TuneECU sends"
+                )
+                c.print(
+                    "   [bold]31 90 11[/bold] (StartRoutineByLocalIdentifier) before its "
+                    "diagnostic reads;"
+                )
+                c.print("   we do not. That is the most likely gate.")
                 break
             hit = self._sweep_one(ident)
             if hit is None:
@@ -1031,13 +1088,16 @@ class SagemDiagnosticsApp:
 
 
         if getattr(self.args, "fault_hunt", False):
-            # Lamp every cycle, and a DTC read every cycle alternating between
-            # pending (Mode 07) and stored (Mode 03). If the ECU flags the fault
-            # as pending before it matures into a stored code -- which is what an
-            # event too brief to set the MIL would look like -- this is where it
-            # appears, and 6-second sampling would have missed it every time.
-            dtc_mode = 0x07 if self.total_frames % 2 == 0 else 0x03
-            return [(0x01, 0x01, 10), (dtc_mode, None, 11)]
+            # Lamp and stored DTCs every cycle.
+            #
+            # Mode 07 is NOT polled. The 20 Sep bench run measured it: this ECU
+            # never answers Mode 07, and each attempt costs a full 223 ms port
+            # timeout against the 64 ms a Mode 03 read takes. Alternating the two
+            # would have spent more than half this mode's bus time waiting on a
+            # service that does not exist, dropping the lamp from ~5.2 Hz to
+            # ~2.8 Hz -- back to roughly the rate that made the 17 Sep rides
+            # uninformative in the first place.
+            return [(0x01, 0x01, 10), (0x03, None, 11)]
 
         if getattr(self.args, "fast", False):
             return [(0x01, 0x01, 10)]     # MIL only, every cycle

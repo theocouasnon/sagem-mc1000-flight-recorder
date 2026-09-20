@@ -79,16 +79,21 @@ def _app(**flags):
 def test_fault_hunt_polls_lamp_throttle_and_dtcs_every_cycle():
     app = _app(fault_hunt=True)
     sched = app._build_poll_schedule() + app._slow_slot_queries()
-    assert [(m, p) for m, p, _ in sched] == [(0x01, 0x11), (0x01, 0x01), (0x07, None)]
+    assert [(m, p) for m, p, _ in sched] == [(0x01, 0x11), (0x01, 0x01), (0x03, None)]
     # Three queries per cycle keeps the lamp near 4.9 Hz, not the ~1 Hz that
     # made "never seen set" uninformative.
     assert len(sched) == 3
 
 
-def test_fault_hunt_alternates_pending_and_stored_dtcs():
+def test_fault_hunt_never_polls_mode_07():
+    """Measured on the bike 20 Sep: this ECU never answers Mode 07, and each
+    attempt burns a 223 ms port timeout against 64 ms for a Mode 03 read."""
     app = _app(fault_hunt=True)
-    app.total_frames = 1
-    assert [(m, p) for m, p, _ in app._slow_slot_queries()] == [(0x01, 0x01), (0x03, None)]
+    for frame in range(4):
+        app.total_frames = frame
+        modes = [m for m, _p, _n in app._slow_slot_queries()]
+        assert 0x07 not in modes
+        assert 0x03 in modes
 
 
 def test_dtc_replies_are_read_as_eleven_bytes():
@@ -241,3 +246,25 @@ def test_bench_brief_mentions_ignition_and_labels(capsys):
     assert "Ignition ON" in text
     assert "--bench-label" in text
     assert "read-only" in text
+
+
+# --- bench transcript and sweep abort --------------------------------------
+
+def test_bench_output_reaches_the_transcript(tmp_path, monkeypatch):
+    """The first run at the bike saved a transcript containing only the
+    briefing, because the three phases printed straight to the console."""
+    from app import _Tee
+    lines = []
+    c = _Tee(lines.append)
+    c.print("[bold]1. MIL / PID 0x01[/bold]")
+    c.print("   raw 486bd141010007 (61 ms)")
+    assert any("MIL" in x for x in lines)
+    assert any("486bd141010007" in x for x in lines)
+
+
+def test_bench_say_strips_markup_for_the_file():
+    app = _app()
+    app.console = __import__("rich.console", fromlist=["Console"]).Console(width=80)
+    app._bench_lines = []
+    app._bench_say("[bold]1. MIL[/bold] raw [dim]0x00[/dim]")
+    assert app._bench_lines == ["1. MIL raw 0x00"]
