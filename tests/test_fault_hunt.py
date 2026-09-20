@@ -288,3 +288,28 @@ def test_mode_07_is_absent_from_every_schedule():
         app.total_frames = frame
         seen.update(m for m, _p, _n in app._slow_slot_queries())
     assert 0x03 in seen
+
+
+def test_failed_read_costs_the_requested_timeout_not_the_port_timeout():
+    """pyserial read() blocks for the PORT timeout, so an unanswered query used
+    to cost 200 ms instead of 60 ms. Above 5000 rpm on the 20 Sep ride that
+    stretched cycles past a second and left a 4.7 s hole in the log."""
+    import time as _time
+    from serial_bus import KLineSerialBus
+
+    class _DeadPort:
+        is_open = True
+        timeout = 0.2
+        def read(self, n):
+            _time.sleep(self.timeout)   # a real port blocks for ITS timeout
+            return b""
+
+    bus = KLineSerialBus.__new__(KLineSerialBus)
+    bus.ser = _DeadPort()
+    bus.stat_ok = bus.stat_silent = bus.stat_bad_csum = bus.stat_short = 0
+    t0 = _time.time()
+    assert bus.read_iso9141_response(expected_len=10, timeout=0.06) == b""
+    elapsed = _time.time() - t0
+    assert elapsed < 0.15, "a dead query must not cost the full port timeout"
+    assert bus.stat_silent == 1
+    assert _DeadPort.timeout == 0.2 or bus.ser.timeout == 0.2, "port timeout restored"

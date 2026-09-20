@@ -422,14 +422,24 @@ class KLineSerialBus:
         if not self.ser or not self.ser.is_open:
             raise SerialBusError("Serial port is not open")
 
-        t_limit = time.time() + timeout
-        resp = bytearray()
-        while time.time() < t_limit and len(resp) < expected_len:
-            b = self.ser.read(expected_len - len(resp))
-            if b:
-                resp.extend(b)
-            else:
-                time.sleep(0.001)
+        # Read in short slices so the loop below owns the deadline. pyserial's
+        # read() blocks for the PORT timeout (0.2 s), not the one passed in, so
+        # a query the ECU never answers used to cost 200 ms instead of 60 ms.
+        # On the 20 Sep ride that mattered: above 5000 rpm more than one query
+        # per cycle was failing, cycles stretched past a second, and the log has
+        # a 4.7 s hole in the run-up to the first stall. The data is thinnest
+        # exactly where the fault is worst, which is the wrong way round.
+        orig_timeout = self.ser.timeout
+        self.ser.timeout = 0.005
+        try:
+            t_limit = time.time() + timeout
+            resp = bytearray()
+            while time.time() < t_limit and len(resp) < expected_len:
+                b = self.ser.read(expected_len - len(resp))
+                if b:
+                    resp.extend(b)
+        finally:
+            self.ser.timeout = orig_timeout
 
         if len(resp) < 4:
             self.stat_silent += 1

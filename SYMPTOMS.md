@@ -101,6 +101,15 @@ caused by the engine cutting, plus repeated cuts throughout.
 | L29 | **One clean Trigger H dropout**, t=430.75: within-cycle samples `43.9 -> 3.5 -> 53.7 -> 60.8` at 5317 rpm during hard acceleration, throttle *opening* throughout, RPM dipping 5544 to 5317. It lands exactly on the closed-throttle floor (3.53), which is what a full signal loss looks like, not a partial sag. No hand can produce that shape. **But n=1, and the control is still invalid**: the clean ride had **zero** cycles with >=3 throttle samples, so H could never have fired there. | 3/5 |
 | L30 | **Every other candidate signature fails against the positive control too.** RPM falling while the throttle *opens*: clean 3.28/min vs faulty **0.58**/min. Floor-hit inside a 2-sample cycle: clean 13.5 per 1000 vs faulty **8.3**. Steady throttle with RPM oscillating: **zero** hits on the faulty ride. All run the wrong way. | 5/5 |
 
+## Facts — K-line corruption scales with engine speed (the strongest result so far)
+
+| # | Observation | Conf |
+|---|---|---|
+| L31 | **Failed and corrupted K-line queries scale with RPM on faulty rides, and not at all on the clean one.** Silent queries per frame on the big ride: 0.000 below 2000 rpm, 0.034, 0.026, **0.397** at 4-5k, **1.121** above 5k. Corrupted (bad checksum) per frame over the same bands: 0.007, 0.011, 0.035, **0.108**, **0.136**. The clean ride is **flat at ~0.20 silent in every band** — entirely the Mode 07 slot that never answers — and **0.000 bad checksum everywhere**, including 137 frames above 5000 rpm. | 5/5 |
+| L32 | **Replicated on the 17 Sep faulty logs.** Using missing `raw_hex` replies as a proxy: log1 0.8/0.0/1.9/**4.3**%, log2 0.0/1.1/**7.2**/**7.1**% across the 2-3k/3-4k/4-5k/5k+ bands, against the clean ride's **0.0% in every band**. Three faulty logs, one clean, consistent dose-response. | 4/5 |
+| L33 | Bad checksums mean bytes arrived and were wrong, not that they were late — so this is genuine electrical corruption, not a timeout being too short. A dose-response against ignition rate points at ignition-system EMI coupling into a ground-referenced line. | 4/5 |
+| L34 | **The logging degrades worst exactly where the fault is worst.** In the 30 s before stall 1 there are frames with nothing fresh at all (6 silent queries in one cycle) and a **4.74 s gap with no frames**. Caused by pyserial blocking for the 200 ms *port* timeout on an unanswered query instead of the 60 ms requested. Fixed 20 Sep. Analysis of that window before the fix should be treated as unreliable. | 5/5 |
+
 ## Facts — garage tests, 17 Sep (all clean)
 
 Performed *after* the TPS was removed and refitted — see the caveat under H4.
