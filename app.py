@@ -55,6 +55,7 @@ from sagem_mc1000 import (
 from sagem_native import (
     NRC_NAMES,
     PRESETS,
+    SAGEM_BY_IDENT,
     SAGEM_BY_NAME,
     SAGEM_SIGNALS,
     decode_response,
@@ -229,6 +230,19 @@ def parse_args() -> argparse.Namespace:
             "assuming 68 ms, and sweeps the service 0x22 identifier space for "
             "anything the ECU answers that TuneECU does not display -- a live "
             "fault word being the thing worth finding. Read-only throughout."
+        ),
+    )
+    parser.add_argument(
+        "--session-start",
+        action="store_true",
+        help=(
+            "Send 31 90 11 (StartRoutineByLocalIdentifier, routine 0x90) before "
+            "reading. TuneECU issues this before its diagnostic reads and we "
+            "never have, which is the likeliest reason this ECU ignores service "
+            "0x22 entirely -- 512 identifiers swept, zero answers and zero "
+            "refusals. NOT read-only: 0x31 starts a routine in the ECU. It is "
+            "what TuneECU sends whenever its sensor page is opened, so it is "
+            "well-trodden on this ECU, but it is off by default and opt-in."
         ),
     )
     parser.add_argument(
@@ -590,6 +604,85 @@ class SagemDiagnosticsApp:
             return None
         return (resp[6] << 8) | resp[7]
 
+    def _send_start_diag(self):
+        """
+        Send TuneECU's 31 90 11 and return (ok, response_bytes).
+
+        Service 0x31 is StartRoutineByLocalIdentifier: routine 0x90, parameter
+        0x11. Recovered from TuneECU's SendStartDiag, which builds [0x31, 0x90,
+        p] where p is 0x11 for a Sagem ECU being read and 0x00 when writing --
+        we only ever send the read form. A positive response is 0x71.
+
+        This is the one place the tooling sends the ECU a command rather than a
+        query, so it is opt-in and never issued implicitly.
+        """
+        resp = self.bus.query_service(bytes([0x31, 0x90, 0x11]), expected_len=7, timeout=0.2)
+        ok = bool(resp) and len(resp) >= 4 and resp[3] == 0x71
+        self.logger.info("start-diag 31 90 11 -> %s", resp.hex() if resp else "(silence)")
+        return ok, resp
+
+    def _sweep_sample(self, idents):
+        """Sweep a list of identifiers, returning (answered, refused, silent)."""
+        answered, refused, silent = [], 0, 0
+        for ident in idents:
+            if not self.running:
+                break
+            hit = self._sweep_one(ident)
+            if hit is None:
+                silent += 1
+            elif hit == "refused":
+                refused += 1
+            else:
+                answered.append((ident, hit))
+        return answered, refused, silent
+
+    def _bench_session_ab(self, c) -> None:
+        """
+        Does 31 90 11 open service 0x22? Same identifiers, before and after.
+
+        Run as an A/B on one connection so nothing else differs: same session,
+        same cable, seconds apart. If the cold pass is silent and the warm pass
+        answers, the session gate is real and every Sagem-native mode in this
+        tool has been talking to a closed door.
+        """
+        probe_set = [0x0017, 0x003B, 0x0015, 0x0018, 0x0001, 0x0008,
+                     0x0002, 0x0003, 0x0005, 0x0007]
+        c.print("")
+        c.print("[bold]4. Session gate: does 31 90 11 open service 0x22?[/bold]")
+        c.print("   [dim]Ten identifiers TuneECU actually uses, swept twice.[/dim]")
+
+        cold, cold_ref, cold_sil = self._sweep_sample(probe_set)
+        c.print("   before:  %d answered, %d refused, %d silent"
+                % (len(cold), cold_ref, cold_sil))
+
+        ok, resp = self._send_start_diag()
+        c.print("   sending 31 90 11 ...  %s"
+                % (("[green]positive response %s[/green]" % resp.hex()) if ok
+                   else ("[yellow]%s[/yellow]" % (resp.hex() if resp else "no response"))))
+
+        warm, warm_ref, warm_sil = self._sweep_sample(probe_set)
+        c.print("   after:   %d answered, %d refused, %d silent"
+                % (len(warm), warm_ref, warm_sil))
+        for ident, raw in warm:
+            sig = SAGEM_BY_IDENT.get(ident)
+            c.print("     0x%04X raw 0x%04X   %s"
+                    % (ident, raw, sig.name if sig else "unknown"))
+
+        c.print("")
+        if warm and not cold:
+            c.print("   [bold green]The session gate is real.[/bold green] Service "
+                    "0x22 answers only after 31 90 11.")
+            c.print("   [dim]Every Sagem-native mode in this tool has been talking "
+                    "to a closed door.[/dim]")
+        elif warm and cold:
+            c.print("   [yellow]0x22 answered both ways[/yellow] -- the gate is not "
+                    "what was blocking it.")
+        else:
+            c.print("   [yellow]Still silent after the start routine.[/yellow] The "
+                    "gate is not 31 90 11 alone;")
+            c.print("   [dim]TuneECU may need its ECU identification (IDSagem) or a "
+                    "security access first.[/dim]")
+
     def _time_query(self, mode, pid, expected_len, repeats=8):
         """Median wall-clock cost of one query, and whether it answered."""
         times, last = [], b""
@@ -861,6 +954,18 @@ class SagemDiagnosticsApp:
             self._bench_lines.append(
                 "  SWEEP 0x%04X raw 0x%04X %s"
                 % (ident, raw, "known" if ident in known else "NEW")
+            )
+        if getattr(self.args, "session_start", False):
+            self._bench_session_ab(c)
+        elif aborted:
+            c.print("")
+            c.print(
+                "   [dim]Re-run with --session-start to test that: it sweeps ten "
+                "identifiers,[/dim]"
+            )
+            c.print(
+                "   [dim]sends 31 90 11, and sweeps the same ten again. Not "
+                "read-only -- opt-in.[/dim]"
             )
         self._bench_finish(len(answered), len(novel), refused, len(idents))
 
