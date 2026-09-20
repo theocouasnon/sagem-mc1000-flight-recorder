@@ -1059,3 +1059,44 @@
 2026-09-20 13:19:00,732 [INFO] sagem: Logging 8 signals: air_temp, coolant_temp, engine_load_pct, fuel_trim_long_pct, fuel_trim_short_pct, rpm, timing_advance_deg, tps
 2026-09-20 13:19:00,732 [WARNING] sagem: ECU does not support: map_kpa, vehicle_speed_kph, battery_volts, throttle_b_pct -- these will be logged as empty, not estimated
 2026-09-20 13:26:17,314 [INFO] sagem.serial: Closed K-Line serial port COM9
+2026-09-20 15:23:58,128 [WARNING] sagem: Could not auto-detect FTDI adapter. Available ports: ['COM7', 'COM5', 'COM8', 'COM11', 'COM10', 'COM4']
+2026-09-20 15:23:58,461 [INFO] sagem: Connecting to Sagem MC1000 on COM7 @ 10400 baud...
+2026-09-20 15:23:58,463 [INFO] sagem: Web dashboard active at http://localhost:8000
+2026-09-20 15:23:59,560 [INFO] sagem.web: WebSocket client connected (1 total)
+2026-09-20 15:24:00,708 [INFO] sagem.web: WebSocket client disconnected (0 remaining)
+2026-09-20 15:24:03,661 [ERROR] sagem: Connection failed: Failed to open port COM7: could not open port 'COM7': OSError(22, 'The semaphore timeout period has expired.', None, 121)
+2026-09-20 15:57:10,538 [INFO] sagem: Auto-detected FTDI K-Line adapter on port: COM9
+2026-09-20 15:57:11,038 [INFO] sagem: Connecting to Sagem MC1000 on COM9 @ 10400 baud...
+2026-09-20 15:57:11,040 [INFO] sagem: Web dashboard active at http://localhost:8000
+2026-09-20 15:57:11,043 [INFO] sagem.serial: Opened K-Line serial port COM9 at 10400 baud
+2026-09-20 15:57:11,043 [INFO] sagem.serial: Physical hardware on COM9: testing Caponord Sagem MC1000 Slow-Init (0x33)...
+2026-09-20 15:57:11,043 [INFO] sagem.serial: Attempting 5-Baud Slow-Init (target=0x33) on COM9...
+2026-09-20 15:57:12,395 [INFO] sagem.web: WebSocket client connected (1 total)
+2026-09-20 15:57:13,600 [INFO] sagem.serial: Slow-init: Received sync 0x55, KB1=0x08, KB2=0x08
+2026-09-20 15:57:14,708 [WARNING] sagem.serial: Slow-init: Expected ack 0xCC, got f7 (echo only -- ECU never answered)
+2026-09-20 15:57:14,708 [INFO] sagem.serial: Slow-init attempt 1 failed; retrying in 2s...
+2026-09-20 15:57:16,718 [INFO] sagem.serial: Attempting 5-Baud Slow-Init (target=0x33) on COM9...
+2026-09-20 15:57:19,276 [INFO] sagem.serial: Slow-init: Received sync 0x55, KB1=0x08, KB2=0x08
+2026-09-20 15:57:19,358 [INFO] sagem.serial: 5-Baud Slow-Init handshake successful (ACK 0xCC)!
+2026-09-20 15:57:19,548 [INFO] sagem.serial: ECU reports 12 supported Mode 01 PIDs: 01 04 05 06 07 0C 0E 0F 11 1C 20 40
+2026-09-20 15:57:19,549 [INFO] sagem: Logging 8 signals: air_temp, coolant_temp, engine_load_pct, fuel_trim_long_pct, fuel_trim_short_pct, rpm, timing_advance_deg, tps
+2026-09-20 15:57:19,549 [WARNING] sagem: ECU does not support: map_kpa, vehicle_speed_kph, battery_volts, throttle_b_pct -- these will be logged as empty, not estimated
+2026-09-20 16:01:40,663 [INFO] sagem.serial: Closed K-Line serial port COM9
+2026-09-20 16:03:12,378 [INFO] sagem: Auto-detected FTDI K-Line adapter on port: COM9
+2026-09-20 16:03:12,794 [INFO] sagem: Connecting to Sagem MC1000 on COM9 @ 10400 baud...
+2026-09-20 16:03:12,795 [INFO] sagem: Web dashboard active at http://localhost:8000
+2026-09-20 16:03:12,814 [INFO] sagem.serial: Opened K-Line serial port COM9 at 10400 baud
+2026-09-20 16:03:12,814 [INFO] sagem.serial: Physical hardware on COM9: testing Caponord Sagem MC1000 Slow-Init (0x33)...
+2026-09-20 16:03:12,814 [INFO] sagem.serial: Attempting 5-Baud Slow-Init (target=0x33) on COM9...
+2026-09-20 16:03:14,138 [INFO] sagem.web: WebSocket client connected (1 total)
+2026-09-20 16:03:15,372 [INFO] sagem.serial: Slow-init: Received sync 0x55, KB1=0x08, KB2=0x08
+2026-09-20 16:03:15,452 [INFO] sagem.serial: 5-Baud Slow-Init handshake successful (ACK 0xCC)!
+2026-09-20 16:03:15,644 [INFO] sagem.serial: ECU reports 12 supported Mode 01 PIDs: 01 04 05 06 07 0C 0E 0F 11 1C 20 40
+2026-09-20 16:03:15,645 [INFO] sagem: Logging 8 signals: air_temp, coolant_temp, engine_load_pct, fuel_trim_long_pct, fuel_trim_short_pct, rpm, timing_advance_deg, tps
+2026-09-20 16:03:15,645 [WARNING] sagem: ECU does not support: map_kpa, vehicle_speed_kph, battery_volts, throttle_b_pct -- these will be logged as empty, not estimated
+2026-09-20 16:07:43,876 [INFO] sagem.recorder: Captured flight recorder event saved: capture_20260920_160740_043_manual_trigger.csv, capture_20260920_160740_043_manual_trigger.json, capture_20260920_160740_043_manual_trigger_report.txt
+2026-09-20 16:07:43,880 [INFO] sagem: Blackbox capture #1 saved: capture_20260920_160740_043_manual_trigger.csv [MANUAL_TRIGGER | RPM: 1341, TPS: 3.5% (min 3.5), Adv: 9.0°, EFI: OFF]
+2026-09-20 16:10:26,822 [WARNING] sagem.recorder: >>> FLIGHT RECORDER TRIGGERED: TRIGGER_H_THROTTLE_DROPOUT - Throttle signal dipped to 3.5% mid-cycle while bracketed by 43.9% and 60.8%, with the previous cycle open throughout, at 5317 RPM. Samples: 43.9 3.5 53.7 60.8. No throttle movement or gearchange can produce this shape.
+2026-09-20 16:10:29,936 [INFO] sagem.recorder: Captured flight recorder event saved: capture_20260920_161026_444_trigger_h_throttle_dropout.csv, capture_20260920_161026_444_trigger_h_throttle_dropout.json, capture_20260920_161026_444_trigger_h_throttle_dropout_report.txt
+2026-09-20 16:10:29,938 [INFO] sagem: Blackbox capture #2 saved: capture_20260920_161026_444_trigger_h_throttle_dropout.csv [TRIGGER_H_THROTTLE_DROPOUT | RPM: 5317, TPS: 60.8% (min 3.5), Adv: 26.5°, EFI: OFF]
+2026-09-20 16:13:25,470 [INFO] sagem.serial: Closed K-Line serial port COM9

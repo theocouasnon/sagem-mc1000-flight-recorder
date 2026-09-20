@@ -86,6 +86,21 @@ Two rides, 421 s and 402 s, **zero cuts felt by the rider**. `session_20260920_1
 | L23 | Rider-marker pauses (throttle shut, idle, 1.5-12 s, mid-ride) exist in `session_20260917_133511.csv` (7) and `session_20260917_094743.csv` (4). The RPM excursions before them are at a **closed** throttle and rise as well as fall, which is what downshifting into a stop looks like. Today's clean ride has 8 such pauses, so pauses alone are junctions, not markers. | 3/5 |
 | L20 | No RPM-based feature separates the clean rides from the faulty ones: drop rate, recovery fraction and throttle-close depth all overlap completely. The clean rides have *more* throttle-held-open RPM losses than the faulty ones. | 4/5 |
 
+## Facts — the 20 Sep big ride (2 stalls, many cuts) — the first positive control
+
+`captures/session_20260920_160312.csv`, 587 s, mode A. Rider confirms two stalls
+caused by the engine cutting, plus repeated cuts throughout.
+
+| # | Observation | Conf |
+|---|---|---|
+| L24 | **The dash EFI lamp is definitively not the OBD MIL bit.** PID 0x01 answered **1228 times** across a ride with two stalls and repeated cuts, and the bit was **never once set**. The rider saw the lamp every time. Settled. | 5/5 |
+| L25 | **The ECU stores no DTC, ever — now properly measured.** Mode 03 polled **301 times**, including across both stalls. Zero codes. First ride in the investigation with real stored-DTC coverage. | 5/5 |
+| L26 | **Both stalls happened at a closed, rock-steady throttle.** 3.53% for 5.6 s (stall 1) and 2.2 s (stall 2) before dying, with no dip of any kind. The engine decelerated normally under overrun fuel cut and then failed to catch idle. **Neither stall involves a throttle dropout.** | 5/5 |
+| L27 | **44 corrupted K-line frames (bad checksum) on this ride, and zero on every other ride ever recorded.** The clean 20 Sep ride spent *more* time above 4000 rpm (355 frames vs 270) with zero errors. Bad checksums mean corrupted bytes on the wire — electrical noise. **This is the first signal that separates a faulty ride from a clean one.** | 4/5 |
+| L28 | Within the faulty ride, a bad checksum only weakly predicts an RPM loss: 17% of bad-checksum frames are followed by a >=8% RPM loss against 8% of other frames (n=18). Suggestive, not significant. The separation is at ride level, not event level. | 3/5 |
+| L29 | **One clean Trigger H dropout**, t=430.75: within-cycle samples `43.9 -> 3.5 -> 53.7 -> 60.8` at 5317 rpm during hard acceleration, throttle *opening* throughout, RPM dipping 5544 to 5317. It lands exactly on the closed-throttle floor (3.53), which is what a full signal loss looks like, not a partial sag. No hand can produce that shape. **But n=1, and the control is still invalid**: the clean ride had **zero** cycles with >=3 throttle samples, so H could never have fired there. | 3/5 |
+| L30 | **Every other candidate signature fails against the positive control too.** RPM falling while the throttle *opens*: clean 3.28/min vs faulty **0.58**/min. Floor-hit inside a 2-sample cycle: clean 13.5 per 1000 vs faulty **8.3**. Steady throttle with RPM oscillating: **zero** hits on the faulty ride. All run the wrong way. | 5/5 |
+
 ## Facts — garage tests, 17 Sep (all clean)
 
 Performed *after* the TPS was removed and refitted — see the caveat under H4.
