@@ -480,6 +480,7 @@ class SagemDiagnosticsApp:
             p for p in supported
             if p in OBD_PIDS and p not in (0x0C, 0x0E, 0x11) and p not in DEAD_PIDS
         )
+        self._preflight_link_check()
         self.logger.info(
             "Logging %d signals: %s",
             len(self.sampler.supported_signals),
@@ -603,6 +604,57 @@ class SagemDiagnosticsApp:
             )
             return None
         return (resp[6] << 8) | resp[7]
+
+    def _preflight_link_check(self) -> None:
+        """
+        Before any logging, measure what a query costs when the ECU ANSWERS and
+        when it does NOT, and refuse to pretend the difference does not matter.
+
+        This exists because the 20 Sep bench printed "mode 07 -- 217 ms -- no
+        answer" and the number was used only to drop Mode 07. Nobody asked the
+        next question: what happens when ordinary queries start failing during a
+        ride? On that ride they did, above 4000 rpm, and each failure cost the
+        full 200 ms port timeout. Cycles stretched past a second and the log
+        lost 4.7 s in the run-up to a stall -- thinnest data exactly where the
+        fault was worst. A ride is expensive; this check costs two seconds.
+        """
+        def timed(pid, n=6):
+            ts = []
+            for _ in range(n):
+                t0 = time.time()
+                self.bus.query_iso9141(mode=0x01, pid=pid, expected_len=7, timeout=0.06)
+                ts.append((time.time() - t0) * 1000.0)
+            ts.sort()
+            return ts[len(ts) // 2]
+
+        try:
+            good = timed(0x11)                     # throttle: always answers
+            dead_pid = next((p for p in (0x0B, 0x0D, 0x42, 0x47)
+                             if p not in self.bus.supported_pids), 0x0B)
+            bad = timed(dead_pid)
+        except Exception as exc:                   # never block a ride on this
+            self.logger.warning("preflight link check skipped: %s", exc)
+            return
+
+        self.logger.info("Preflight: answered query %.0f ms, unanswered %.0f ms", good, bad)
+        self.console.print(
+            "[dim]Link check: a query the ECU answers takes %.0f ms; one it "
+            "ignores costs %.0f ms.[/dim]" % (good, bad)
+        )
+        if bad > 2.5 * max(good, 1.0):
+            self.console.print(
+                "[bold yellow]WARNING: an unanswered query costs %.0fx an answered "
+                "one.[/bold yellow]" % (bad / max(good, 1.0))
+            )
+            self.console.print(
+                "  If queries start failing mid-ride -- which is what this bike "
+                "does above 4000 rpm --"
+            )
+            self.console.print(
+                "  the cycle rate will collapse and the log will thin out exactly "
+                "where it matters."
+            )
+        self._preflight = {"answered_ms": good, "unanswered_ms": bad}
 
     def _send_start_diag(self):
         """

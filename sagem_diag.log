@@ -1100,3 +1100,6 @@
 2026-09-20 16:10:29,936 [INFO] sagem.recorder: Captured flight recorder event saved: capture_20260920_161026_444_trigger_h_throttle_dropout.csv, capture_20260920_161026_444_trigger_h_throttle_dropout.json, capture_20260920_161026_444_trigger_h_throttle_dropout_report.txt
 2026-09-20 16:10:29,938 [INFO] sagem: Blackbox capture #2 saved: capture_20260920_161026_444_trigger_h_throttle_dropout.csv [TRIGGER_H_THROTTLE_DROPOUT | RPM: 5317, TPS: 60.8% (min 3.5), Adv: 26.5°, EFI: OFF]
 2026-09-20 16:13:25,470 [INFO] sagem.serial: Closed K-Line serial port COM9
+2026-09-20 19:15:27,531 [WARNING] sagem: Could not auto-detect FTDI adapter. Available ports: ['COM7', 'COM5', 'COM8', 'COM11', 'COM10', 'COM4']
+2026-09-20 19:15:27,532 [INFO] sagem: Connecting to Sagem MC1000 on COM7 @ 10400 baud...
+2026-09-20 19:15:32,759 [ERROR] sagem: Connection failed: Failed to open port COM7: could not open port 'COM7': OSError(22, 'The semaphore timeout period has expired.', None, 121)
