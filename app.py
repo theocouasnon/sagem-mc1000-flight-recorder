@@ -18,9 +18,11 @@ with automated root-cause diagnosis.
 import argparse
 import asyncio
 from collections import deque
+from datetime import datetime
 import logging
 import os
 from pathlib import Path
+import re
 import platform
 import sys
 import threading
@@ -230,6 +232,17 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--bench-label",
+        type=str,
+        default="",
+        help=(
+            "A word describing the bike's state for this --bench run, e.g. "
+            "ign-on, idle, throttle, charger. It goes into the transcript "
+            "filename and header. The sweep is most informative compared across "
+            "states, and an unlabelled run is hard to compare later."
+        ),
+    )
+    parser.add_argument(
         "--bench-sweep",
         type=str,
         default="0x0000-0x00FF,0x0400-0x04FF",
@@ -429,8 +442,19 @@ class SagemDiagnosticsApp:
         self.sampler.note_unsupported()
 
         # High-rate PIDs have dedicated slots; everything else shares the slow slot.
+        #
+        # Both fuel trims are excluded. PIDs 0x06 and 0x07 appear in this ECU's
+        # support bitmask but return placeholders: short-term reads exactly 39.1%
+        # and long-term exactly 0.0 in every sample of every log, across ~275
+        # polls. The bike has no O2 sensor (PID 0x14 absent) so it runs open-loop
+        # and there is nothing for them to report. Dropping them does not free
+        # bandwidth for throttle or RPM -- the slow slot is one query per cycle
+        # whatever sits in it -- but it makes the rest of the rotation, and the
+        # DTC sweep in particular, come round about 40% sooner.
+        DEAD_PIDS = (0x06, 0x07)
         self._slow_pid_rotation = sorted(
-            p for p in supported if p in OBD_PIDS and p not in (0x0C, 0x0E, 0x11)
+            p for p in supported
+            if p in OBD_PIDS and p not in (0x0C, 0x0E, 0x11) and p not in DEAD_PIDS
         )
         self.logger.info(
             "Logging %d signals: %s",
@@ -568,6 +592,105 @@ class SagemDiagnosticsApp:
         times.sort()
         return times[len(times) // 2], last
 
+    def _bench_say(self, markup: str = "") -> None:
+        """Print to the console and keep a plain-text copy for the transcript."""
+        self.console.print(markup)
+        plain = re.sub(r"\[/?[a-z0-9 _#]+\]", "", markup)
+        self._bench_lines.append(plain)
+
+    def _bench_brief(self) -> None:
+        """
+        What the operator needs to know before anything is polled.
+
+        --bench is meant to be run at the bike without me watching, so it has to
+        say what state the bike should be in, what it is about to do, and what to
+        do with the result. A run in an unrecorded state is worth much less: the
+        sweep is most informative compared across states.
+        """
+        say = self._bench_say
+        say("")
+        say("[bold]BENCH SESSION[/bold]  -- read-only, nothing is written to the ECU")
+        say("")
+        say("  [bold]Before you start[/bold]")
+        say("    - Ignition ON. The diagnostic port has no power otherwise.")
+        say("    - Engine may be off or running; both are useful. Say which via")
+        say("      --bench-label, e.g.  --bench-label ign-on   /  --bench-label idle")
+        say("    - Do not unplug or switch off until it says DONE. It takes about")
+        say("      %d seconds." % self._bench_estimate_secs())
+        say("")
+        say("  [bold]What it does[/bold]")
+        say("    1. Checks the EFI lamp PID (0x01) actually answers. Until this is")
+        say("       confirmed, every 'the lamp bit was never set' result we have is")
+        say("       meaningless -- it could equally mean nothing was answering.")
+        say("    2. Times every query type, to measure the K-line budget instead of")
+        say("       assuming it.")
+        say("    3. Sweeps the ECU for data identifiers TuneECU does not display.")
+        say("       A live fault word would be exactly such a thing, and it is the")
+        say("       best chance of catching a lamp the OBD bit never shows.")
+        say("")
+        say("  [bold]Run it three times, changing one thing each time[/bold]")
+        say("    a) ignition on, engine off        --bench-label ign-on")
+        say("    b) engine warm, idling            --bench-label idle")
+        say("    c) idling, someone working the    --bench-label throttle")
+        say("       throttle through the whole run")
+        say("    Anything that changes between those runs is a live channel.")
+        say("    Anything frozen across all three is a constant, and useless.")
+        say("")
+        say("  [bold]Afterwards[/bold]")
+        say("    A transcript is saved to captures/. Send me all three and I will")
+        say("    work out which identifiers are real and what they measure.")
+        say("")
+        say("  [dim]" + "-" * 68 + "[/dim]")
+        say("")
+
+    def _bench_finish(self, answered: int, novel: int, refused: int, total: int) -> None:
+        """Write the transcript and tell the operator what to do next."""
+        label = (getattr(self.args, "bench_label", "") or "unlabelled").strip()
+        safe = re.sub(r"[^A-Za-z0-9_-]", "-", label) or "unlabelled"
+        path = Path("captures") / (
+            "bench_%s_%s.txt" % (datetime.now().strftime("%Y%m%d_%H%M%S"), safe)
+        )
+        header = [
+            "Sagem MC1000 bench session",
+            "when:  %s" % datetime.now().isoformat(timespec="seconds"),
+            "state: %s" % label,
+            "sweep: %s" % (getattr(self.args, "bench_sweep", "") or ""),
+            "result: %d answered (%d not in TuneECU's tables), %d refused, %d silent"
+            % (answered, novel, refused, total - answered - refused),
+            "",
+        ]
+        say = self._bench_say
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                "\n".join(header + self._bench_lines), encoding="utf-8"
+            )
+            wrote = str(path)
+        except OSError as exc:
+            wrote = ""
+            self.logger.warning("could not write bench transcript: %s", exc)
+
+        say("")
+        say("  [bold green]DONE[/bold green] -- safe to switch off or unplug now.")
+        if wrote:
+            say("  Transcript: [bold]%s[/bold]" % wrote)
+        if label == "unlabelled":
+            say(
+                "  [yellow]This run was not labelled.[/yellow] Re-runs are compared "
+                "against each other,"
+            )
+            say("  so add --bench-label ign-on / idle / throttle next time.")
+        say("")
+        say("  [bold]Next[/bold]")
+        say("    - Repeat in the other states (ignition-on, warm idle, and idling")
+        say("      with the throttle being worked) so the channels can be compared.")
+        say("    - Then send me the transcripts from captures/.")
+        say("")
+
+    def _bench_estimate_secs(self) -> int:
+        n = len(self._parse_ranges(getattr(self.args, "bench_sweep", "") or ""))
+        return int(n * 0.07 + 8)
+
     def _bench(self) -> None:
         """
         Every check worth doing with the bike connected and stationary.
@@ -577,9 +700,11 @@ class SagemDiagnosticsApp:
         nothing), what does each query really cost, and is there an identifier
         the ECU answers that TuneECU never displays.
         """
+        self._bench_lines: List[str] = []
         if not self._require_iso9141("--bench"):
             return
 
+        self._bench_brief()
         c = self.console
         c.print("")
         c.print("[bold]Bench session[/bold]  (read-only; nothing is written to the ECU)")
@@ -675,7 +800,12 @@ class SagemDiagnosticsApp:
                 "a live channel, and a word that changes only when the lamp "
                 "lights is the fault register.[/dim]"
             )
-        c.print("")
+        for ident, raw in answered:
+            self._bench_lines.append(
+                "  SWEEP 0x%04X raw 0x%04X %s"
+                % (ident, raw, "known" if ident in known else "NEW")
+            )
+        self._bench_finish(len(answered), len(novel), refused, len(idents))
 
     def _sagem_probe(self) -> None:
         """

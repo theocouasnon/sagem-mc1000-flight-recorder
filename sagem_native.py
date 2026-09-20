@@ -370,7 +370,15 @@ SAGEM_EDIT_TABLE: Tuple[Tuple[int, int], ...] = (
 # a channel on the same 5 V reference acting as the control, and batt_volts
 # catches a charging or earth fault that would move both.
 PRESETS: Dict[str, Tuple[str, ...]] = {
-    "decisive": ("tps_volts", "volts_a", "batt_volts"),
+    # RPM rides along because without it a voltage dip has nothing to be aligned
+    # against: you would see the dip and still be relying on the rider's memory
+    # to say a cut happened at that moment. Three signals is ~4.9 Hz each, which
+    # puts 2-6 samples inside an event lasting 460-1190 ms.
+    "decisive": ("tps_volts", "volts_a", "rpm"),
+    # The original three, kept for the case where the supply rail itself is the
+    # suspect and the battery channel matters more than event alignment.
+    "decisive_volts": ("tps_volts", "volts_a", "batt_volts"),
+    "decisive4": ("tps_volts", "volts_a", "rpm", "batt_volts"),
     "volts": ("tps_volts", "volts_a", "volts_b", "batt_volts"),
     "supply": ("tps_volts", "volts_a"),
     "context": ("tps_volts", "throttle_raw", "rpm"),

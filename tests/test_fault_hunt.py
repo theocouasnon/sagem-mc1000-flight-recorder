@@ -202,3 +202,42 @@ def test_parse_ranges_dedupes_and_rejects_bad_input():
         SagemDiagnosticsApp._parse_ranges("0x20-0x10")
     with pytest.raises(SystemExit):
         SagemDiagnosticsApp._parse_ranges("banana")
+
+
+# --- pending changes: decisive preset and the dead-PID exclusion -----------
+
+def test_decisive_preset_carries_rpm():
+    """Without RPM a voltage dip has nothing to align against, leaving the
+    rider's memory as the only evidence a cut happened at that moment."""
+    from sagem_native import PRESETS
+    assert "rpm" in PRESETS["decisive"]
+    assert len(PRESETS["decisive"]) == 3      # ~4.9 Hz each
+    # The original volts-only set is kept, not silently replaced.
+    assert "batt_volts" in PRESETS["decisive_volts"]
+
+
+def test_fuel_trims_are_excluded_from_the_slow_rotation():
+    """PIDs 0x06/0x07 are advertised but return placeholders: 39.1% and 0.0 in
+    every sample of every log."""
+    app = _app()
+    app.sampler = None
+    supported = {0x01, 0x04, 0x05, 0x06, 0x07, 0x0C, 0x0E, 0x0F, 0x11, 0x1C}
+    from sagem_mc1000 import OBD_PIDS
+    rotation = sorted(
+        p for p in supported
+        if p in OBD_PIDS and p not in (0x0C, 0x0E, 0x11) and p not in (0x06, 0x07)
+    )
+    assert 0x06 not in rotation and 0x07 not in rotation
+    assert 0x05 in rotation, "coolant must survive the exclusion"
+
+
+def test_bench_brief_mentions_ignition_and_labels(capsys):
+    from rich.console import Console
+    app = _app(bench_sweep="0x00-0x0F", bench_label="")
+    app.console = Console(width=80)
+    app._bench_lines = []
+    app._bench_brief()
+    text = "".join(app._bench_lines)
+    assert "Ignition ON" in text
+    assert "--bench-label" in text
+    assert "read-only" in text
