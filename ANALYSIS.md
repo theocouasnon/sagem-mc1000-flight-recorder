@@ -61,7 +61,53 @@ This matters practically: H2 and H3 are different repairs in different places.
 
 ## Paths, in the order they are worth pursuing
 
-### Path 1 — Read the throttle voltage directly (now the best test available)
+### Path 0 — Catch the EFI lamp (do this first)
+
+The rider confirms the lamp lights on **every single event, without exception**
+(R6). That makes it a better fault indicator than anything else we have: the
+throttle dip appears on 9 of 13 events, the lamp on 13 of 13.
+
+We have never caught it. The MIL bit was sampled ~838 times across the two
+17 Sep rides and never came back set (L12). Those two facts cannot both
+describe the same signal, and separating them is cheap:
+
+```bash
+python app.py --port auto --web --fault-hunt
+```
+
+Lamp, throttle and the DTC sweep every cycle, ~4.9 Hz each, Mode 07 and Mode 03
+alternating. Three outcomes, all of them useful:
+
+- **The MIL bit sets at an event.** The lamp is the OBD bit and we have a
+  reliable trigger. Every future log becomes far more informative.
+- **A pending code appears (Mode 07).** The ECU names the circuit itself and the
+  investigation is essentially over. Note this has never been properly tested —
+  Mode 07 was sampled every ~6 s, and Mode 03 has never been polled at all (L14).
+- **Neither, while the rider still sees the lamp.** The dash lamp is a separate
+  ECU output, not the OBD bit, and no amount of OBD polling will ever catch it.
+  That sends us to the identifier sweep in path 0b.
+
+### Path 0b — Bench session: find what the ECU knows that TuneECU does not show
+
+```bash
+python app.py --port auto --bench
+```
+
+Read-only, stationary, a few minutes. Three things:
+
+1. **Does PID 0x01 answer at all?** Until this is confirmed, every "the lamp bit
+   was never set" result is void — it could equally mean the query was never
+   answered (L12).
+2. **What does each query actually cost?** The 14.7 queries/sec figure that the
+   whole recorder design rests on has never been measured directly.
+3. **A sweep of the service 0x22 identifier space.** TuneECU knows 32
+   identifiers because those are the ones it has display decoders for; the space
+   is 16 bits (E10). A live fault word would be exactly the sort of thing the
+   ECU exposes and TuneECU ignores. Re-run it with the engine warm and again
+   while a helper works the throttle — anything that changes with engine state
+   is a live channel.
+
+### Path 1 — Read the throttle voltage directly
 
 ```bash
 python app.py --port auto --sagem-probe
@@ -174,8 +220,13 @@ throttle dip is not yet proven to be the cause of all 13 events.
 never lost, no coil faults" — that evidence came from Mode 07 polled roughly
 every 10 s with Mode 03 never read at all, so it is worthless. What is actually
 known is that replacing the coils and cleaning the crank sensor did not fix it
-(P1, P3), which is weaker. DTC coverage is now correct in modes A and C, so
-future logs will carry real evidence here.
+(P1, P3), which is weaker.
+
+**Correction, 20 Sep.** An earlier version of this file said DTC coverage was
+"now correct in modes A and C". That was true of the code and false of the data:
+the fix landed at 17:44 on 17 Sep, *after* both evening rides, and no log has
+been recorded since. **There is still no log in this investigation with real
+stored-DTC coverage** (L14). The next ride will be the first.
 
 ---
 

@@ -25,6 +25,29 @@ That is the whole design problem. There is no mode that gets everything fast.
 | **E. Custom set** | `python app.py --port auto --web --poll tps,coolant_temp,air_temp` | 3 | Exactly the named signals, 14.7/N Hz each. Nothing else. |
 | **F. Sagem probe** | `python app.py --port auto --sagem-probe` | one-shot | Asks the ECU for all 32 Sagem-native identifiers once, prints raw + decoded, exits. |
 | **G. Sagem native** | `python app.py --port auto --sagem-poll decisive` | 3 | **Voltages.** Logs to `captures/sagem_<ts>.csv` with the raw word beside every value. |
+| **H. Fault hunt** | `python app.py --port auto --web --fault-hunt` | 3 | **The lamp.** MIL bit, throttle, and Mode 07/Mode 03 alternating, ~4.9 Hz each. Nothing else. |
+| **I. Bench** | `python app.py --port auto --bench` | one-shot | Stationary checks: does PID 0x01 answer, what each query really costs, and a read-only sweep of the service 0x22 identifier space. |
+
+### Mode H — why the lamp, not the throttle
+
+The rider confirms the EFI lamp lights on **every** event (R6); the throttle dip
+shows on 9 of 13. The lamp is the better indicator and we have never caught it —
+the MIL bit was sampled ~838 times across the two 17 Sep rides and never came
+back set (L12). At the ~1 Hz those rides actually sampled, missing a 300 ms lamp
+13 times running has a probability of about 1%, so the two are probably not the
+same signal. Mode H settles it, and polls the DTC sweep fast enough to catch a
+pending code that only exists for a moment.
+
+Two fixes went in alongside it:
+
+- **The MIL reply is now logged on every cycle**, not only when the bit is set.
+  Recording it only when set makes "the lamp never lit" and "PID 0x01 never
+  answered" indistinguishable afterwards, which is precisely what left L12
+  unresolved.
+- **Mode 03 and Mode 07 are read as 11 bytes, not 12.** TuneECU's own
+  `SendActiveCodeQuery` declares 11 and the reply genuinely is 11 (E9). Asking
+  for one byte more makes pyserial block for the full 200 ms port timeout on
+  every DTC sweep instead of the usual ~68 ms.
 
 ### Modes F and G — the Sagem-native path
 
@@ -91,9 +114,23 @@ of valid ones.
 | — | Voltage, MAP, dwell and injection were **synthesised** from RPM and TPS, not read | Any conclusion drawn from those columns in a pre-17-Sep log is invalid |
 | — | PID discovery added: walks the 0x00/0x20/0x40 support bitmasks at connect | 12 PIDs supported; no voltage, speed, MAP, O2 or second throttle sensor exists |
 | — | TPS oversampling added for the throttle-dropout hypothesis | **MIL dropped to ~1 Hz and Mode 03 was never polled at all.** This is why the crank sensor and coils cannot be considered cleared by log evidence |
-| 17 Sep | MIL restored to every cycle, Mode 03 added to the rotation | One query per cycle |
+| 17 Sep | MIL restored to every cycle, Mode 03 added to the rotation | One query per cycle. **Landed 17:44, after both evening rides — so neither ride has it, and no log since exists. The two rides sampled MIL on alternate frames only (~1.0 and ~1.4 Hz) and never polled Mode 03 at all.** |
+| 20 Sep | Link-health counters added: `comms_ok`, `comms_silent`, `comms_bad_csum`, `cycle_ms` per frame | Nothing — costs no bus bandwidth. A failed query used to be skipped silently, leaving no trace of a disturbance during an event |
+| 20 Sep | Mode 03 / Mode 07 reply length corrected 12 → 11 | Saves ~130 ms per DTC sweep, which was being spent waiting out the port timeout |
 | 17 Sep | `--fast` added | Drops DTCs and temps entirely |
 | 17 Sep | `--poll` added | Nothing; it is strictly more flexible than `--focus` |
+
+## Signals not worth polling
+
+**Both fuel trims.** `fuel_trim_short_pct` reads exactly 39.1% and
+`fuel_trim_long_pct` exactly 0.0 in every sample of every log, across ~275 polls
+(L15). The bike has no O2 sensor (PID 0x14 absent) so it runs open-loop and
+these PIDs return placeholders, despite appearing in the support bitmask.
+
+Dropping them from the rotation does **not** free bandwidth for throttle or RPM
+— the slow slot is one query per cycle whatever sits in it. What it does is make
+the remaining slow signals and the DTC sweep come round about 40% faster, which
+matters now that the DTC sweep is the thing being hunted.
 
 ## Things the recorder still does not read
 
